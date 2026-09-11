@@ -19,7 +19,7 @@ import com.expstudio.facilitycore.core.Palette
  */
 object Chapter1 {
 
-    const val CHASE_SECONDS = 15f
+    const val CHASE_SECONDS = 30f
     /** Where the monster notices the player in the archive. */
     const val ENCOUNTER_X = 20f
     /** Distance into the return vent at which the ceiling comes apart. */
@@ -195,9 +195,13 @@ object Chapter1 {
     private fun buildMaze2(): Room = room("maze2", "Service Run B", 14f, 8.5f, needsPower = true).apply {
         shell(openLeft = true, openRight = true)
         decorBox(0f, -0.4f, 14f, 0.4f, Palette.WALL_LIT, Decor.Kind.STRIPE)
-        // Collapsed bulkhead leaving a 1.05 m slot: sneak or die.
+        // Collapsed bulkhead leaving a 1.05 m slot. It has to read as a crawl
+        // from a distance, at a run, in the dark: hazard lip, a sign above it
+        // and a grate lining the gap itself.
         solid(6.2f, -8.5f, 3.0f, 7.45f)
-        decorBox(6.2f, -1.27f, 3.0f, 0.22f, Palette.BAD, Decor.Kind.STRIPE)
+        decorBox(6.2f, -1.32f, 3.0f, 0.27f, Palette.WARN, Decor.Kind.STRIPE)
+        decorBox(6.2f, -1.05f, 3.0f, 0.10f, Palette.WARN, Decor.Kind.GRATE)
+        props.add(Sign(Box.of(6.0f, -2.5f, 3.4f, 0.6f), "CRAWL SPACE", Palette.WARN))
         solid(10.6f, -1.1f, 1.6f, 1.1f, Solid.Kind.CRATE)
         solid(12.4f, -2.1f, 1.6f, 0.3f, Solid.Kind.PLATFORM)
         decorBox(1f, -8.4f, 4.5f, 0.28f, Palette.TRIM, Decor.Kind.PIPE)
@@ -357,7 +361,7 @@ object Chapter1 {
 
         // The monster's route never changes; only its state does. It starts six
         // metres behind the player's encounter position and arrives at the
-        // bulkhead feed exactly as the 15 second budget runs out.
+        // bulkhead feed exactly as the budget runs out.
         g.monster.setRoute(
             listOf(
                 ChaseLeg("archive", ENCOUNTER_X - 6f, 29.5f, 0f),

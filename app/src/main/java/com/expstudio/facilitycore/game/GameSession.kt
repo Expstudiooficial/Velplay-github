@@ -7,6 +7,7 @@ import com.expstudio.facilitycore.core.Camera
 import com.expstudio.facilitycore.core.Draw
 import com.expstudio.facilitycore.core.MathX
 import com.expstudio.facilitycore.core.Palette
+import kotlin.math.abs
 import kotlin.math.sin
 
 /** One line of the player's inner monologue. */
@@ -94,6 +95,16 @@ class GameSession(
 
     private val solidScratch = ArrayList<Box>(64)
     private var exitCooldown = 0f
+    private var blockedTime = 0f
+
+    /**
+     * Set while the player is being stopped by something they could fit under
+     * if they crouched. Without this the collapsed bulkhead reads as a dead end:
+     * you run into it, jump at it because that is what you do, and die to the
+     * chase timer never learning that SNEAK was the answer.
+     */
+    var crouchHint = false
+        private set
     private var ventFloorBroken = false
     private var pendingRespawn = false
     private var repairQueued = false
@@ -119,6 +130,8 @@ class GameSession(
         ventFloorBroken = false
         pendingRespawn = false
         repairQueued = false
+        blockedTime = 0f
+        crouchHint = false
         cut = Cut.NONE
         cutTime = 0f
         chaseTime = 0f
@@ -221,6 +234,7 @@ class GameSession(
         monster.update(dt)
 
         if (exitCooldown > 0f) exitCooldown -= dt
+        updateCrouchHint(dt, moveX, crouch)
         updateInteraction(interactPressed)
         if (cut == Cut.NONE) checkExits()
         updateStory()
@@ -305,6 +319,27 @@ class GameSession(
             onHaptic?.invoke(12)
             best.onInteract(this)
         }
+    }
+
+    /** Decides whether to tell the player that SNEAK would get them through. */
+    private fun updateCrouchHint(dt: Float, moveX: Float, crouching: Boolean) {
+        val pushing = abs(moveX) > 0.2f && player.controlEnabled
+        val blocked = pushing && abs(player.vx) < 0.5f && player.onGround
+        if (!blocked || crouching || player.crouching) {
+            blockedTime = 0f
+            crouchHint = false
+            return
+        }
+        blockedTime += dt
+        if (blockedTime < HINT_DELAY) {
+            crouchHint = false
+            return
+        }
+        // Probe just ahead: standing does not fit, crouching does.
+        val dir = if (moveX > 0f) 1f else -1f
+        val probeX = player.x + dir * 0.55f
+        crouchHint = !player.canFit(probeX, player.y, Player.STAND_HEIGHT, solidScratch) &&
+            player.canFit(probeX, player.y, Player.CROUCH_HEIGHT, solidScratch)
     }
 
     private fun checkExits() {
@@ -518,7 +553,14 @@ class GameSession(
     private fun updateChase(dt: Float) {
         if (stage != Stage.CHASE || cut != Cut.NONE) return
         chaseTime += dt
-        monster.advanceChase(dt, Chapter1.CHASE_SECONDS)
+        // The clock is the deadline, but the pursuit is anchored to the player:
+        // a purely time-driven monster on a 30 second budget crawls along at
+        // under 2 m/s and is never seen, which is not a chase.
+        val timeProgress = chaseTime / Chapter1.CHASE_SECONDS
+        val playerProgress = monster.progressAt(room.id, player.x)
+        val lead = MathX.lerp(CHASE_LEAD_START, CHASE_LEAD_END, timeProgress) / monster.routeLength
+        val anchored = if (playerProgress != null) playerProgress - lead else 0f
+        monster.setChaseProgress(kotlin.math.max(timeProgress, anchored))
         camera.shake(0.03f + 0.05f * (chaseTime / Chapter1.CHASE_SECONDS), 0.1f)
         if (monster.wantsScream()) audio.play(Sfx.Id.SCREAM, 0.55f)
 
@@ -954,6 +996,12 @@ class GameSession(
         const val ENDING_SECONDS = 7.5f
         const val DEATH_SECONDS = 1.9f
         const val CHASE_SPEED_BOOST = 1.15f
+        /** How long to be stopped by a low gap before the game says so. */
+        const val HINT_DELAY = 0.35f
+        /** Metres the pursuer hangs back at the start of the chase... */
+        const val CHASE_LEAD_START = 9f
+        /** ...and at the end, by which point the clock has caught up anyway. */
+        const val CHASE_LEAD_END = 1.5f
         /** Progress at which the thing lands on the car's roof. */
         const val LANDING_CUE = 0.60f
     }

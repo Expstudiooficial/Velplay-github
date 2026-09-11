@@ -59,10 +59,31 @@ class Monster {
         roomId = room; x = px; y = py; facing = face
     }
 
-    /** Advances along the route so the full run takes [durationSeconds]. */
-    fun advanceChase(dt: Float, durationSeconds: Float) {
+    /** Total route length in metres, so callers can reason about leads. */
+    val routeLength: Float get() = totalLength
+
+    /**
+     * Maps a position in the world onto the chase route, or null when that room
+     * is not on it. Used to keep the pursuit anchored to the player rather than
+     * to the clock.
+     */
+    fun progressAt(roomId: String, x: Float): Float? {
+        if (legs.isEmpty()) return null
+        var travelled = 0f
+        for (leg in legs) {
+            if (leg.roomId == roomId) {
+                val along = if (leg.toX >= leg.fromX) (x - leg.fromX) else (leg.fromX - x)
+                return ((travelled + along.coerceIn(0f, leg.length)) / totalLength).coerceIn(0f, 1f)
+            }
+            travelled += leg.length
+        }
+        return null
+    }
+
+    /** Drives the pursuit forward. It never reverses. */
+    fun setChaseProgress(progress: Float) {
         if (legs.isEmpty()) return
-        chaseProgress = (chaseProgress + dt / durationSeconds).coerceIn(0f, 1f)
+        chaseProgress = progress.coerceIn(0f, 1f).coerceAtLeast(chaseProgress)
         var travelled = chaseProgress * totalLength
         for (leg in legs) {
             if (travelled <= leg.length || leg === legs.last()) {

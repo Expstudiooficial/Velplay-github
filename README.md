@@ -16,7 +16,7 @@ power, no people, and something in the dark that used to be one.
 |---|---|---|
 | Stick | Touch anywhere on the left half and drag | Move. The stick floats to your thumb. |
 | **JUMP** | Bottom right | Clears a 1.6 m step and a 3 m gap. Walk into a crate and tap JUMP and you pull yourself up onto it — no run-up needed. |
-| **SNEAK** | Bottom right | Crouch. The only way through low gaps and ducts. |
+| **SNEAK** | Bottom right | Crouch. The only way through low gaps and ducts — if something stops you that you could fit under, the game says so and lights the button. |
 | **USE** | Right, above JUMP | Lights up whenever something is in reach. |
 | **II** | Top right | Pause, restart from the checkpoint, or quit. |
 
@@ -51,10 +51,12 @@ Thirteen connected rooms, roughly 20–30 minutes on a first run:
    throw it up into the connection station. Subfloor 0 goes live.
 6. **Lift Landing** — the lift is not in the pack's database. *"I guess I have to
    add it myself."*
-7. **Archive Floor** — you are not alone. **Run.** Fifteen seconds through the
+7. **Archive Floor** — you are not alone. **Run.** Thirty seconds through the
    service runs: vault the server rows, sneak the collapsed bulkhead, and get
-   the bulkhead feed connected in the pump room before it reaches you. Miss, and
-   it puts its face in yours and you wake up back at the locked lift.
+   the bulkhead feed connected in the pump room before it reaches you. It hangs
+   about nine metres off your heels the whole way, so the clock is the deadline
+   but the thing behind you is what you feel. Miss, and it puts its face in
+   yours and you wake up back at the locked lift.
 8. **Data Spine** — two feeds, two data shards, one circuit. Write it into the
    archive panel and take your pack back with Subfloor 1 on it.
 9. **Return Vent** — crawl back. Something is waiting at the far end.
@@ -113,10 +115,14 @@ scene — so a level change that strands the player fails the build.
 - `MantleTest` checks the ledge pull-up cannot be abused: the sealed door's
   ledge still needs its staircase, the chase bulkhead still has to be crawled,
   and no pull-up ever ends inside geometry.
+- `CrawlTest` finds every gap in the game too low to walk through, and checks
+  each one announces itself and can actually be crawled — plus that a player who
+  sprints into the bulkhead and jumps at it before working out it is a crawl
+  still survives the chase.
 - `LevelIntegrityTest` checks the room graph and every spawn point.
 - `ProgressionTest` checks every saveable stage loads into a finishable world.
-- `TraversalTest` proves each climb is jumpable and the chase both winnable and
-  lethal.
+- `TraversalTest` proves each climb is jumpable, the chase both winnable and
+  lethal, and the pursuer close enough to stay a threat.
 - `ScreenshotTest` and `RenderCostTest` rasterise real frames off-device, to
   `app/build/screenshots/`, so the art direction and the frame budget can be
   looked at rather than assumed.

@@ -361,6 +361,7 @@ class GameView(
         draw.rect(c, pauseButton.cx + bar * 0.15f, pauseButton.cy - bar, pauseButton.cx + bar * 0.6f, pauseButton.cy + bar, Palette.TEXT)
 
         drawInventory(c, h)
+        if (session.crouchHint) drawCrouchHint(c, w, h)
         if (session.dialogueVisible) drawDialogue(c, w, h)
     }
 
@@ -393,6 +394,31 @@ class GameView(
                 )
             }
         }
+    }
+
+    /**
+     * Called out hard: a ring pulsing on the SNEAK button itself plus a line of
+     * text, so the answer is both named and pointed at.
+     */
+    private fun drawCrouchHint(c: Canvas, w: Float, h: Float) {
+        val pulse = 0.5f + 0.5f * sin(session.time * 7f)
+        val b = controls.sneak
+        draw.circleStroke(c, b.cx, b.cy, b.radius * (1.25f + pulse * 0.18f),
+            Palette.withAlpha(Palette.WARN, 0.35f + pulse * 0.45f), 5f)
+        draw.circle(c, b.cx, b.cy, b.radius, Palette.withAlpha(Palette.WARN, 0.18f * pulse))
+
+        val text = "HOLD SNEAK TO FIT THROUGH"
+        val size = h * 0.044f
+        val tw = draw.measure(text, size, true)
+        val pad = h * 0.026f
+        val cx = w * 0.5f
+        val t = h * 0.145f
+        draw.round(c, cx - tw * 0.5f - pad, t, cx + tw * 0.5f + pad, t + size * 2.1f,
+            size, Palette.withAlpha(Palette.VOID, 0.72f))
+        draw.roundStroke(c, cx - tw * 0.5f - pad, t, cx + tw * 0.5f + pad, t + size * 2.1f,
+            size, Palette.withAlpha(Palette.WARN, 0.4f + pulse * 0.4f), 2.5f)
+        draw.textCentered(c, text, cx, t + size * 1.05f, size,
+            Palette.withAlpha(Palette.TEXT, 0.85f + pulse * 0.15f), true)
     }
 
     private fun drawDialogue(c: Canvas, w: Float, h: Float) {

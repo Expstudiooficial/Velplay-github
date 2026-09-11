@@ -53,5 +53,10 @@ class ScreenshotTest {
             g.enterRoomForTest("archive", 18f)
         }
         shoot("circuit_lit", Stage.PANEL_UPLOADED)
+        // The collapsed bulkhead that stranded a player: it has to read as a
+        // crawl from across the room, at a run.
+        shoot("maze2_crawl", Stage.PANEL_UPLOADED) { g ->
+            g.enterRoomForTest("maze2", 3.4f)
+        }
     }
 }

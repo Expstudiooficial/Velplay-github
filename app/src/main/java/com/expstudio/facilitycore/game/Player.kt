@@ -230,7 +230,8 @@ class Player {
         return true
     }
 
-    private fun canFit(px: Float, py: Float, h: Float, solids: List<Box>): Boolean {
+    /** True when a body of height [h] would stand free at ([px], [py]). */
+    fun canFit(px: Float, py: Float, h: Float, solids: List<Box>): Boolean {
         val b = boundsAt(px, py, h)
         for (s in solids) if (b.overlaps(s)) return false
         return true

@@ -58,7 +58,7 @@ class TraversalTest {
     fun theChaseIsSurvivable() {
         val session = Bot.session(Stage.ELEVATOR_DENIED)
         val bot = Bot(session, 1f).apply { interactLabels = setOf("GRAB", "THROW") }
-        bot.runFor(90f, until = { session.stage >= Stage.CHASE_SURVIVED })
+        bot.runFor(120f, until = { session.stage >= Stage.CHASE_SURVIVED })
 
         assertTrue(
             "the chase was never survived (stage=${session.stage}, room=${session.roomId()}, chase=${session.chaseTime})",
@@ -66,7 +66,7 @@ class TraversalTest {
         )
         assertTrue(
             "survived only at the wire: ${session.chaseTime}s of ${Chapter1.CHASE_SECONDS}s",
-            session.chaseTime < Chapter1.CHASE_SECONDS - 1.2f
+            session.chaseTime < Chapter1.CHASE_SECONDS * 0.6f
         )
     }
 
@@ -80,7 +80,7 @@ class TraversalTest {
 
         // Stop dead and wait out the budget.
         var t = 0f
-        while (t < Chapter1.CHASE_SECONDS + 4f && session.stage >= Stage.CHASE) {
+        while (t < Chapter1.CHASE_SECONDS + 6f && session.stage >= Stage.CHASE) {
             session.update(1f / 60f, 0f, false, false, false)
             t += 1f / 60f
             if (session.stage == Stage.ELEVATOR_DENIED) break
@@ -89,6 +89,37 @@ class TraversalTest {
             "standing still was survivable",
             session.stage == Stage.ELEVATOR_DENIED || session.cutIsDeath()
         )
+    }
+
+    /**
+     * The pursuer has to stay a threat. A purely clock-driven monster on a long
+     * budget trails so far behind it is never on screen, which turns the chase
+     * into a corridor walk.
+     */
+    @Test
+    fun thePursuerStaysOnTheRunnersHeels() {
+        val session = Bot.session(Stage.ELEVATOR_DENIED)
+        val bot = Bot(session, 1f).apply { interactLabels = setOf("GRAB", "THROW") }
+
+        var closest = Float.MAX_VALUE
+        var sawItInTheSameRoom = false
+        var touchedARunner = false
+        var t = 0f
+        while (t < 120f && session.stage < Stage.CHASE_SURVIVED) {
+            bot.step(1f / 60f)
+            t += 1f / 60f
+            if (session.stage != Stage.CHASE) continue
+            if (session.monster.roomId != session.roomId()) continue
+            sawItInTheSameRoom = true
+            val gap = abs(session.monster.x - session.player.x)
+            if (gap < closest) closest = gap
+            if (session.monster.touching(session.player)) touchedARunner = true
+        }
+
+        assertTrue("the chase never resolved", session.stage >= Stage.CHASE_SURVIVED)
+        assertTrue("the pursuer was never even in the same room", sawItInTheSameRoom)
+        assertTrue("the pursuer trailed too far to be a threat (closest ${closest}m)", closest < 14f)
+        assertTrue("the pursuer caught a player who ran the whole way", !touchedARunner)
     }
 
     /** Dying rolls back exactly to the locked lift, as the chapter intends. */
