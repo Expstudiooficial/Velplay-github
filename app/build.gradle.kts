@@ -36,6 +36,7 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -44,4 +45,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Renders real frames off-device so the look can be checked, not guessed.
+    testImplementation("org.robolectric:robolectric:4.13")
 }

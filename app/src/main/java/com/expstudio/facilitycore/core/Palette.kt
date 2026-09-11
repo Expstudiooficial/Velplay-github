@@ -11,11 +11,11 @@ object Palette {
     const val BG_FAR = 0xFF0B0F14.toInt()
     const val BG_NEAR = 0xFF121822.toInt()
 
-    const val WALL = 0xFF1B2430.toInt()
-    const val WALL_LIT = 0xFF2A3646.toInt()
-    const val FLOOR = 0xFF232E3C.toInt()
-    const val FLOOR_EDGE = 0xFF33425A.toInt()
-    const val TRIM = 0xFF3D4E68.toInt()
+    const val WALL = 0xFF212C3B.toInt()
+    const val WALL_LIT = 0xFF35455B.toInt()
+    const val FLOOR = 0xFF2B384A.toInt()
+    const val FLOOR_EDGE = 0xFF3E5170.toInt()
+    const val TRIM = 0xFF4C6183.toInt()
 
     const val PLAYER = 0xFFF2F5F8.toInt()
     const val PLAYER_SHADE = 0xFFBFC8D4.toInt()

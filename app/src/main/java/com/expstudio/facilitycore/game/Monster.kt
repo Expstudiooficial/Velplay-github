@@ -114,19 +114,40 @@ class Monster {
         val headR = hPx * 0.115f
         val headY = feetY - hPx * 0.92f
         val limb = hPx * 0.055f
+        val shW = hPx * 0.135f
+        val hipW = hPx * 0.085f
+        val lean = if (facing >= 0) hPx * 0.07f else -hPx * 0.07f
+        val armY = shoulderY + hPx * 0.03f
+        val reach = if (mode == Mode.CHASING) hPx * 0.30f else hPx * 0.12f
 
-        // Smoke pooling at the feet.
-        d.circle(c, sx, feetY, hPx * 0.30f, Palette.withAlpha(0xFF000000.toInt(), 0.45f))
-        d.circle(c, sx, feetY - hPx * 0.02f, hPx * 0.20f, Palette.withAlpha(Palette.MONSTER_CRACK, 0.14f))
+        // Rot haze hanging around the whole figure.
+        d.glow(c, sx, feetY - hPx * 0.5f, hPx * 0.62f, Palette.MONSTER_CRACK, 0.55f)
+        d.ellipse(c, sx, feetY, hPx * 0.34f, hPx * 0.09f, Palette.withAlpha(0xFF000000.toInt(), 0.55f))
+        d.ellipse(c, sx, feetY - hPx * 0.01f, hPx * 0.24f, hPx * 0.06f,
+            Palette.withAlpha(Palette.MONSTER_CRACK, 0.16f))
+
+        // Purple rim behind the silhouette: the figure never reads as a hole in
+        // the screen, it reads as something standing in front of it.
+        val rim = Palette.withAlpha(Palette.MONSTER_CRACK, 0.42f)
+        val rimW = limb * 2.1f + hPx * 0.018f
+        d.line(c, sx, hipY, sx + swing * stride, feetY, rim, rimW)
+        d.line(c, sx, hipY, sx + swing2 * stride, feetY, rim, rimW)
+        d.poly(
+            c,
+            floatArrayOf(
+                sx - shW + lean - hPx * 0.016f, shoulderY - hPx * 0.016f,
+                sx + shW + lean + hPx * 0.016f, shoulderY - hPx * 0.016f,
+                sx + hipW + hPx * 0.016f, hipY,
+                sx - hipW - hPx * 0.016f, hipY
+            ),
+            rim
+        )
 
         // Legs — long and angular.
         d.line(c, sx, hipY, sx + swing * stride, feetY, Palette.MONSTER, limb * 2.1f)
         d.line(c, sx, hipY, sx + swing2 * stride, feetY, Palette.MONSTER, limb * 2.1f)
 
         // Hunched torso.
-        val shW = hPx * 0.135f
-        val hipW = hPx * 0.085f
-        val lean = if (facing >= 0) hPx * 0.07f else -hPx * 0.07f
         d.poly(
             c,
             floatArrayOf(
@@ -138,26 +159,55 @@ class Monster {
             Palette.MONSTER
         )
 
-        // Torn seams of purple rot.
-        val crack = Palette.withAlpha(Palette.MONSTER_CRACK, 0.75f)
+        // Broken spines along the back.
+        var i = 0
+        while (i < 4) {
+            val f = i / 4f
+            val bx = sx - shW * 0.9f + lean * (1f - f)
+            val by = shoulderY + (hipY - shoulderY) * f
+            d.poly(
+                c,
+                floatArrayOf(
+                    bx, by,
+                    bx - hPx * (0.05f + 0.03f * sin(time * 1.7f + i)), by + hPx * 0.03f,
+                    bx, by + hPx * 0.08f
+                ),
+                Palette.MONSTER
+            )
+            i++
+        }
+
+        // Torn seams of purple rot, lit from inside.
+        val crack = Palette.withAlpha(Palette.MONSTER_CRACK, 0.85f)
         d.line(c, sx - shW * 0.3f + lean, shoulderY + hPx * 0.04f, sx + hipW * 0.2f, hipY - hPx * 0.05f, crack, limb * 0.55f)
         d.line(c, sx + shW * 0.45f + lean, shoulderY + hPx * 0.09f, sx + hipW * 0.6f, hipY - hPx * 0.12f, crack, limb * 0.4f)
         d.line(c, sx - hipW * 0.7f, hipY - hPx * 0.02f, sx - hipW * 0.2f, hipY + hPx * 0.10f, crack, limb * 0.35f)
+        d.glow(c, sx + lean * 0.4f, (shoulderY + hipY) * 0.5f, hPx * 0.20f, Palette.MONSTER_CRACK, 0.5f)
 
         // Arms, reaching further while chasing.
-        val reach = if (mode == Mode.CHASING) hPx * 0.30f else hPx * 0.12f
-        val armY = shoulderY + hPx * 0.03f
         d.line(c, sx + lean, armY, sx + facing * reach + swing2 * stride * 0.6f, armY + hPx * 0.26f, Palette.MONSTER, limb * 1.7f)
         d.line(c, sx + lean, armY, sx + facing * reach * 1.25f + swing * stride * 0.6f, armY + hPx * 0.20f, Palette.MONSTER, limb * 1.7f)
+        // Claws on the leading hand.
+        val handX = sx + facing * reach * 1.25f + swing * stride * 0.6f
+        val handY = armY + hPx * 0.20f
+        var k = -1
+        while (k <= 1) {
+            d.line(c, handX, handY, handX + facing * hPx * 0.07f, handY + hPx * (0.05f + k * 0.035f),
+                Palette.MONSTER, limb * 0.5f)
+            k++
+        }
 
-        // Head and the two red eyes.
+        // Head and the two red eyes, with a lens flare across them.
         d.circle(c, sx + lean * 1.4f, headY, headR, Palette.MONSTER)
         val eyeGap = headR * 0.46f
         val eyeY = headY - headR * 0.12f
         val glowK = 0.75f + 0.25f * sin(time * 5.3f)
         val ex = sx + lean * 1.4f + facing * headR * 0.22f
+        d.glow(c, ex, eyeY, headR * 2.6f, Palette.MONSTER_EYE, 0.55f * glowK)
         d.glow(c, ex - eyeGap, eyeY, headR * 0.95f, Palette.MONSTER_EYE, glowK)
         d.glow(c, ex + eyeGap, eyeY, headR * 0.95f, Palette.MONSTER_EYE, glowK)
+        d.line(c, ex - headR * 1.9f, eyeY, ex + headR * 1.9f, eyeY,
+            Palette.withAlpha(Palette.MONSTER_EYE, 0.16f * glowK), headR * 0.16f)
         d.circle(c, ex - eyeGap, eyeY, headR * 0.20f, Palette.MONSTER_EYE)
         d.circle(c, ex + eyeGap, eyeY, headR * 0.20f, Palette.MONSTER_EYE)
     }

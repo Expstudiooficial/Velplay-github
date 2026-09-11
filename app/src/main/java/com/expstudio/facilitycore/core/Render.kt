@@ -1,6 +1,9 @@
 package com.expstudio.facilitycore.core
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -136,15 +139,44 @@ class Draw {
         c.drawLine(x1, y1, x2, y2, stroke)
     }
 
-    /** Soft additive-looking halo built from a few stacked translucent discs. */
+    private val glowBitmaps = HashMap<Int, Bitmap>()
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+    private val blitDst = RectF()
+
+    /**
+     * Soft halo. The falloff is rendered once per colour into a small bitmap and
+     * blitted scaled: a radial gradient evaluated per pixel is one of the most
+     * expensive things this renderer can ask for, and stacking translucent
+     * discs — the cheap alternative — produced visible concentric banding.
+     */
     fun glow(c: Canvas, cx: Float, cy: Float, radius: Float, color: Int, strength: Float = 1f) {
-        var i = 4
-        while (i >= 1) {
-            val f = i / 4f
-            fill.color = Palette.withAlpha(color, 0.10f * strength * (1f - f) + 0.05f * strength)
-            c.drawCircle(cx, cy, radius * (0.45f + f * 0.75f), fill)
-            i--
-        }
+        if (strength <= 0.005f || radius <= 0.5f) return
+        val bmp = glowBitmaps.getOrPut(color) { buildFalloff(color) }
+        glowPaint.alpha = MathX.clamp(strength * 0.42f * 255f, 0f, 255f).toInt()
+        blitDst.set(cx - radius, cy - radius, cx + radius, cy + radius)
+        c.drawBitmap(bmp, null, blitDst, glowPaint)
+        glowPaint.alpha = 255
+    }
+
+    private fun buildFalloff(color: Int): Bitmap {
+        val size = 96
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val half = size * 0.5f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.shader = RadialGradient(
+            half, half, half,
+            intArrayOf(
+                Palette.withAlpha(color, 1f),
+                Palette.withAlpha(color, 0.52f),
+                Palette.withAlpha(color, 0.17f),
+                Palette.withAlpha(color, 0f)
+            ),
+            floatArrayOf(0f, 0.26f, 0.58f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawCircle(half, half, half, paint)
+        return bmp
     }
 
     /** Draws a closed polygon from flat x,y pairs. */
@@ -208,66 +240,205 @@ class Draw {
         return out
     }
 
-    private var darkShader: RadialGradient? = null
-    private var darkKey = FloatArray(3) { Float.NaN }
-    private val darkPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val gradients = HashMap<Long, LinearGradient>()
+    private val gradPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val gradMatrix = Matrix()
+
+    /**
+     * Vertical gradient fill. One unit-tall shader per colour pair is built once
+     * and stretched with a matrix, so a gradient costs no more than a flat fill
+     * after the first frame.
+     */
+    fun vGradient(c: Canvas, l: Float, t: Float, r: Float, b: Float, top: Int, bottom: Int) {
+        if (b <= t || r <= l) return
+        val key = (top.toLong() shl 32) or (bottom.toLong() and 0xFFFFFFFFL)
+        val shader = gradients.getOrPut(key) {
+            LinearGradient(0f, 0f, 0f, 1f, top, bottom, Shader.TileMode.CLAMP)
+        }
+        gradMatrix.reset()
+        gradMatrix.setScale(1f, b - t)
+        gradMatrix.postTranslate(0f, t)
+        shader.setLocalMatrix(gradMatrix)
+        gradPaint.shader = shader
+        c.drawRect(l, t, r, b, gradPaint)
+        gradPaint.shader = null
+    }
+
+    private val ovalRect = RectF()
+
+    fun ellipse(c: Canvas, cx: Float, cy: Float, rx: Float, ry: Float, color: Int) {
+        fill.color = color
+        ovalRect.set(cx - rx, cy - ry, cx + rx, cy + ry)
+        c.drawOval(ovalRect, fill)
+    }
+
+    /**
+     * A shaft of light falling from a fixture. Three stacked trapezoids read as
+     * volumetric without needing a blur or an offscreen layer.
+     */
+    fun lightCone(
+        c: Canvas,
+        apexX: Float,
+        apexY: Float,
+        topHalf: Float,
+        bottomHalf: Float,
+        length: Float,
+        color: Int,
+        strength: Float
+    ) {
+        if (strength <= 0.01f || length <= 0f) return
+        var i = 0
+        while (i < 6) {
+            val f = 1f - i * 0.15f
+            val a = 0.030f * strength
+            poly(
+                c,
+                floatArrayOf(
+                    apexX - topHalf * f, apexY,
+                    apexX + topHalf * f, apexY,
+                    apexX + bottomHalf * f, apexY + length * f,
+                    apexX - bottomHalf * f, apexY + length * f
+                ),
+                Palette.withAlpha(color, a)
+            )
+            i++
+        }
+    }
+
+    /**
+     * A surface slab: gradient body, a lit top lip, a shaded underside, and a
+     * contact shadow where it meets whatever is beneath it.
+     */
+    fun surface(
+        c: Canvas,
+        l: Float,
+        t: Float,
+        r: Float,
+        b: Float,
+        top: Int,
+        bottom: Int,
+        lip: Int,
+        lipPx: Float,
+        occlusionPx: Float = 0f
+    ) {
+        vGradient(c, l, t, r, b, top, bottom)
+        if (lipPx > 0.4f) {
+            rect(c, l, t, r, t + lipPx, lip)
+            rect(c, l, b - lipPx * 0.5f, r, b, Palette.withAlpha(Palette.VOID, 0.28f))
+        }
+        // Vertical edges catch a touch of light so corners read as corners.
+        rect(c, l, t, l + lipPx * 0.6f, b, Palette.withAlpha(lip, 0.18f))
+        rect(c, r - lipPx * 0.6f, t, r, b, Palette.withAlpha(Palette.VOID, 0.20f))
+        if (occlusionPx > 0.5f) {
+            vGradient(
+                c, l - occlusionPx * 0.5f, b - occlusionPx, r + occlusionPx * 0.5f, b + occlusionPx,
+                Palette.withAlpha(Palette.VOID, 0f), Palette.withAlpha(Palette.VOID, 0.45f)
+            )
+        }
+    }
+
+    private var darkBitmap: Bitmap? = null
+    private var darkKeyColor = 0
+    private var darkKeyDepth = -1f
+    private val darkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
 
     /**
      * Pours darkness over the screen with a soft hole around ([cx], [cy]).
-     * The gradient is rebuilt only when the hole actually moves or resizes.
+     * The falloff is a cached bitmap rather than a live gradient: this pass
+     * covers the whole screen every frame in every unlit room, and measured as
+     * more than half the cost of a frame when it was shaded per pixel.
      */
-    fun darkness(c: Canvas, widthPx: Float, heightPx: Float, cx: Float, cy: Float, radius: Float, color: Int) {
+    fun darkness(
+        c: Canvas,
+        widthPx: Float,
+        heightPx: Float,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        color: Int,
+        /** Darkness at the far edge. Kept below 1 so unlit space stays readable. */
+        depth: Float = 0.84f
+    ) {
         val r = radius.coerceAtLeast(1f)
-        if (darkShader == null || darkKey[0] != cx || darkKey[1] != cy || darkKey[2] != r) {
-            darkShader = RadialGradient(
-                cx, cy, r,
-                intArrayOf(
-                    Palette.withAlpha(color, 0f),
-                    Palette.withAlpha(color, 0.35f),
-                    Palette.withAlpha(color, 0.88f),
-                    Palette.withAlpha(color, 0.97f)
-                ),
-                floatArrayOf(0f, 0.42f, 0.82f, 1f),
-                Shader.TileMode.CLAMP
-            )
-            darkKey[0] = cx; darkKey[1] = cy; darkKey[2] = r
+        if (darkBitmap == null || darkKeyColor != color || darkKeyDepth != depth) {
+            darkBitmap = buildDarkness(color, depth)
+            darkKeyColor = color
+            darkKeyDepth = depth
         }
-        darkPaint.shader = darkShader
-        c.drawRect(0f, 0f, widthPx, heightPx, darkPaint)
-        darkPaint.shader = null
-        // Beyond the gradient's radius CLAMP leaves the last colour, which is
-        // not fully opaque, so seal the corners explicitly.
-        darkPaint.color = Palette.withAlpha(color, 0.97f)
+        val bmp = darkBitmap ?: return
+        blitDst.set(cx - r, cy - r, cx + r, cy + r)
+        c.drawBitmap(bmp, null, blitDst, darkPaint)
+        // The blit only covers the hole; seal everything outside it flat.
+        darkPaint.color = Palette.withAlpha(color, depth)
         if (cx - r > 0f) c.drawRect(0f, 0f, cx - r, heightPx, darkPaint)
         if (cx + r < widthPx) c.drawRect(cx + r, 0f, widthPx, heightPx, darkPaint)
-        if (cy - r > 0f) c.drawRect(0f, 0f, widthPx, cy - r, darkPaint)
-        if (cy + r < heightPx) c.drawRect(0f, cy + r, widthPx, heightPx, darkPaint)
+        if (cy - r > 0f) c.drawRect(cx - r, 0f, cx + r, cy - r, darkPaint)
+        if (cy + r < heightPx) c.drawRect(cx - r, cy + r, cx + r, heightPx, darkPaint)
     }
 
-    private var vignetteShader: RadialGradient? = null
-    private var vignetteKey = FloatArray(3) { Float.NaN }
-    private val vignettePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private fun buildDarkness(color: Int, depth: Float): Bitmap {
+        val size = 192
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val half = size * 0.5f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        // Square corners must already read as fully dark, or the seal rects
+        // would show as bright seams against the blit.
+        paint.color = Palette.withAlpha(color, depth)
+        canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+        paint.shader = RadialGradient(
+            half, half, half,
+            intArrayOf(
+                Palette.withAlpha(color, 0f),
+                Palette.withAlpha(color, depth * 0.34f),
+                Palette.withAlpha(color, depth * 0.82f),
+                Palette.withAlpha(color, depth)
+            ),
+            floatArrayOf(0f, 0.46f, 0.84f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
+        canvas.drawCircle(half, half, half, paint)
+        return bmp
+    }
 
-    /** Standing screen-edge falloff; [strength] is pushed up during the chase. */
+    private var vignetteBitmap: Bitmap? = null
+    private var vignetteKeyColor = 0
+    private val vignettePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+
+    /**
+     * Standing screen-edge falloff; [strength] is pushed up during the chase.
+     * Cached as a bitmap for the same reason as [darkness]: it covers the whole
+     * frame in every room, every frame.
+     */
     fun vignette(c: Canvas, widthPx: Float, heightPx: Float, strength: Float, color: Int) {
-        if (strength <= 0.001f) return
-        val cx = widthPx * 0.5f
-        val cy = heightPx * 0.5f
-        val r = MathX.min(widthPx, heightPx) * 0.92f
-        if (vignetteShader == null || vignetteKey[0] != cx || vignetteKey[1] != cy || vignetteKey[2] != r) {
-            vignetteShader = RadialGradient(
-                cx, cy, r,
-                intArrayOf(Palette.withAlpha(color, 0f), Palette.withAlpha(color, 0.18f), Palette.withAlpha(color, 1f)),
-                floatArrayOf(0f, 0.55f, 1f),
-                Shader.TileMode.CLAMP
-            )
-            vignetteKey[0] = cx; vignetteKey[1] = cy; vignetteKey[2] = r
+        if (strength <= 0.001f || widthPx <= 0f || heightPx <= 0f) return
+        if (vignetteBitmap == null || vignetteKeyColor != color) {
+            vignetteBitmap = buildVignette(color)
+            vignetteKeyColor = color
         }
-        vignettePaint.shader = vignetteShader
+        val bmp = vignetteBitmap ?: return
         vignettePaint.alpha = MathX.clamp(strength * 255f, 0f, 255f).toInt()
-        c.drawRect(0f, 0f, widthPx, heightPx, vignettePaint)
-        vignettePaint.shader = null
+        blitDst.set(0f, 0f, widthPx, heightPx)
+        c.drawBitmap(bmp, null, blitDst, vignettePaint)
         vignettePaint.alpha = 255
+    }
+
+    private fun buildVignette(color: Int): Bitmap {
+        // Stretched to the screen, so a square source is fine and cheap.
+        val size = 128
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val half = size * 0.5f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.shader = RadialGradient(
+            half, half, half,
+            intArrayOf(Palette.withAlpha(color, 0f), Palette.withAlpha(color, 0.18f), Palette.withAlpha(color, 1f)),
+            floatArrayOf(0f, 0.55f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+        return bmp
     }
 
     fun panel(c: Canvas, l: Float, t: Float, r: Float, b: Float, radius: Float) {

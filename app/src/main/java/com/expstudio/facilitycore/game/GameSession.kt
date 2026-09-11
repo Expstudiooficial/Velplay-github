@@ -705,11 +705,27 @@ class GameSession(
 
     // ---- rendering -------------------------------------------------------
 
+    private val scenery = HashMap<String, Scenery>()
+
+    private fun sceneryFor(r: Room): Scenery = scenery.getOrPut(r.id) { Scenery(r) }
+
+    /** 0 = pitch dark room, 1 = fully lit. Drives dust, sheen and light cones. */
+    private fun ambient(): Float = if (room.needsPower && !subfloorPowered) 0.18f else 1f
+
     fun render(c: Canvas, d: Draw, widthPx: Float, heightPx: Float) {
-        drawBackground(c, d, widthPx, heightPx)
+        val sc = sceneryFor(room)
+        val amb = ambient()
+
+        drawSky(c, d, widthPx, heightPx)
+        sc.drawFar(c, d, camera)
+        sc.drawMid(c, d, camera)
+        sc.drawNear(c, d, camera)
 
         for (dec in room.decor) drawDecor(c, d, dec)
         for (s in room.solids) drawSolid(c, d, s)
+        drawFloorSheen(c, d, amb)
+        drawLightCones(c, d)
+
         for (p in room.props) if (camera.isVisible(p.box.inflated(3f))) p.draw(c, d, camera, this)
 
         if (monster.mode != Monster.Mode.HIDDEN && monster.roomId == room.id) {
@@ -721,22 +737,21 @@ class GameSession(
         player.draw(c, d, camera, time)
         carriedCable?.let { drawCarriedCable(c, d, it) }
 
+        sc.drawDust(c, d, camera, time, player.x, player.y - 1f, 0.35f + amb * 0.65f)
         drawLighting(c, d, widthPx, heightPx)
     }
 
-    private fun drawBackground(c: Canvas, d: Draw, w: Float, h: Float) {
-        d.rect(c, 0f, 0f, w, h, Palette.BG_FAR)
-        // Parallax wall panelling; slow enough to read as distant structure.
-        val step = camera.s(3.2f)
-        if (step > 4f) {
-            var x = -(camera.x * 0.45f * camera.scale) % step
-            while (x < w) {
-                d.rect(c, x, 0f, x + step * 0.06f, h, Palette.withAlpha(Palette.BG_NEAR, 0.9f))
-                x += step
-            }
-        }
-        val floorY = camera.sy(room.bounds.b)
-        d.rect(c, 0f, camera.sy(room.bounds.t), w, floorY, Palette.withAlpha(Palette.BG_NEAR, 0.55f))
+    /**
+     * The single background pass. It carries the deep vertical wash, the
+     * separation between parallax and playfield, and the cool grade all at
+     * once: each of those used to be its own full-screen fill.
+     */
+    private fun drawSky(c: Canvas, d: Draw, w: Float, h: Float) {
+        d.vGradient(
+            c, 0f, 0f, w, h,
+            Palette.mix(Palette.mix(Palette.BG_FAR, Palette.VOID, 0.42f), Palette.ACCENT_DIM, 0.10f),
+            Palette.mix(Palette.mix(Palette.BG_FAR, Palette.BG_NEAR, 0.30f), Palette.ACCENT_DIM, 0.06f)
+        )
     }
 
     private fun drawDecor(c: Canvas, d: Draw, dec: Decor) {
@@ -745,20 +760,44 @@ class GameSession(
         val t = camera.sy(dec.box.t); val b = camera.sy(dec.box.b)
         when (dec.kind) {
             Decor.Kind.LIGHT -> {
-                val on = dec.lit || subfloorPowered || !room.needsPower
-                val flicker = if (on) 0.75f + 0.25f * sin(time * 9.3f + dec.box.l) else 0.08f
-                d.rect(c, l, t, r, b, Palette.mix(Palette.WALL_LIT, dec.color, if (on) 0.8f else 0.1f))
-                if (on) d.glow(c, (l + r) * 0.5f, b, camera.s(1.6f), dec.color, 0.55f * flicker)
+                val powered = dec.lit || subfloorPowered || !room.needsPower
+                // An unpowered fixture still runs on the emergency bus: a dim
+                // red ember. A pitch black room the player cannot read is not
+                // atmosphere, it is a wall.
+                val tint = if (powered) dec.color else Palette.BAD
+                val flicker = if (powered) 0.78f + 0.22f * sin(time * 9.3f + dec.box.l)
+                else 0.30f + 0.16f * sin(time * 1.7f + dec.box.l)
+                d.surface(
+                    c, l, t, r, b,
+                    Palette.mix(Palette.WALL_LIT, tint, if (powered) 0.75f else 0.30f),
+                    Palette.mix(Palette.WALL, Palette.VOID, 0.3f),
+                    Palette.withAlpha(tint, flicker),
+                    MathX.min(camera.s(0.05f), 3f)
+                )
+                d.glow(c, (l + r) * 0.5f, b, camera.s(if (powered) 2.0f else 1.1f), tint, 0.72f * flicker)
+                d.circle(c, (l + r) * 0.5f, b - camera.s(0.05f), camera.s(0.10f), Palette.withAlpha(tint, flicker))
             }
             Decor.Kind.GRATE -> {
-                d.rect(c, l, t, r, b, Palette.withAlpha(dec.color, 0.9f))
+                d.vGradient(c, l, t, r, b, Palette.mix(dec.color, Palette.WALL_LIT, 0.4f),
+                    Palette.mix(dec.color, Palette.VOID, 0.45f))
                 var x = l
-                while (x < r) {
+                val step = MathX.min(camera.s(0.16f), 24f)
+                while (x < r && step > 1.5f) {
                     d.line(c, x, t, x, b, Palette.withAlpha(Palette.VOID, 0.55f), 2f)
-                    x += camera.s(0.16f)
+                    x += step
                 }
+                d.rect(c, l, t, r, t + 2f, Palette.withAlpha(Palette.TRIM, 0.5f))
             }
-            else -> d.rect(c, l, t, r, b, dec.color)
+            Decor.Kind.PIPE -> {
+                d.vGradient(c, l, t, r, b, Palette.mix(dec.color, Palette.TEXT_DIM, 0.35f),
+                    Palette.mix(dec.color, Palette.VOID, 0.5f))
+                d.rect(c, l, t, r, t + MathX.min(camera.s(0.05f), 3f), Palette.withAlpha(Palette.TEXT_DIM, 0.35f))
+            }
+            Decor.Kind.STRIPE -> {
+                d.vGradient(c, l, t, r, b, Palette.mix(dec.color, Palette.TRIM, 0.35f),
+                    Palette.mix(dec.color, Palette.VOID, 0.4f))
+            }
+            else -> d.vGradient(c, l, t, r, b, dec.color, Palette.mix(dec.color, Palette.VOID, 0.4f))
         }
     }
 
@@ -766,17 +805,83 @@ class GameSession(
         if (!camera.isVisible(s.box, 1.5f)) return
         val l = camera.sx(s.box.l); val r = camera.sx(s.box.r)
         val t = camera.sy(s.box.t); val b = camera.sy(s.box.b)
-        val body = when (s.kind) {
-            Solid.Kind.CRATE -> Palette.mix(Palette.WALL_LIT, Palette.FLOOR, 0.35f)
-            Solid.Kind.PLATFORM -> Palette.FLOOR_EDGE
-            else -> Palette.WALL
+        val lip = MathX.min(camera.s(0.07f), 5f)
+        when (s.kind) {
+            Solid.Kind.CRATE -> {
+                d.surface(
+                    c, l, t, r, b,
+                    Palette.mix(Palette.WALL_LIT, Palette.TRIM, 0.30f),
+                    Palette.mix(Palette.WALL, Palette.VOID, 0.45f),
+                    Palette.mix(Palette.TRIM, Palette.TEXT_DIM, 0.35f),
+                    lip, occlusionPx = camera.s(0.30f)
+                )
+                // Banding so a crate never reads as a plain block.
+                val band = t + (b - t) * 0.34f
+                d.rect(c, l + lip, band, r - lip, band + lip * 0.8f, Palette.withAlpha(Palette.VOID, 0.35f))
+                d.rect(c, l + lip, band + lip * 0.8f, r - lip, band + lip * 1.3f,
+                    Palette.withAlpha(Palette.TRIM, 0.25f))
+            }
+            Solid.Kind.PLATFORM -> {
+                d.surface(
+                    c, l, t, r, b,
+                    Palette.mix(Palette.FLOOR_EDGE, Palette.TRIM, 0.45f),
+                    Palette.mix(Palette.FLOOR, Palette.VOID, 0.35f),
+                    Palette.mix(Palette.TRIM, Palette.ACCENT_DIM, 0.30f),
+                    lip
+                )
+                // Under-lit edge so a thin ledge is obvious against a dark wall.
+                d.rect(c, l, b, r, b + lip * 0.7f, Palette.withAlpha(Palette.VOID, 0.5f))
+            }
+            else -> {
+                d.surface(
+                    c, l, t, r, b,
+                    Palette.mix(Palette.WALL, Palette.WALL_LIT, 0.35f),
+                    Palette.mix(Palette.WALL, Palette.VOID, 0.55f),
+                    Palette.mix(Palette.WALL_LIT, Palette.TRIM, 0.30f),
+                    lip
+                )
+                // Panel seams across large structure.
+                val step = MathX.min(camera.s(1.6f), 220f)
+                if (step > 12f && (r - l) > step) {
+                    var x = l + step
+                    while (x < r) {
+                        d.line(c, x, t, x, b, Palette.withAlpha(Palette.VOID, 0.30f), 2f)
+                        x += step
+                    }
+                }
+            }
         }
-        d.rect(c, l, t, r, b, body)
-        // Top light edge: the single detail that sells the low-poly read.
-        d.rect(c, l, t, r, t + camera.s(0.07f), Palette.mix(body, Palette.TRIM, 0.75f))
-        if (s.kind == Solid.Kind.CRATE) {
-            d.line(c, l + camera.s(0.12f), t + camera.s(0.22f), r - camera.s(0.12f), t + camera.s(0.22f),
-                Palette.withAlpha(Palette.VOID, 0.35f), 2f)
+    }
+
+    /** A long specular smear along the floor line; cheap, and sells the depth. */
+    private fun drawFloorSheen(c: Canvas, d: Draw, amb: Float) {
+        val floorY = camera.sy(room.bounds.b)
+        val height = camera.s(0.9f)
+        d.vGradient(
+            c, 0f, floorY - height, camera.viewW * camera.scale, floorY,
+            Palette.withAlpha(Palette.ACCENT, 0f),
+            Palette.withAlpha(Palette.ACCENT, 0.055f * amb)
+        )
+        d.rect(c, 0f, floorY - 2f, camera.viewW * camera.scale, floorY,
+            Palette.withAlpha(Palette.TRIM, 0.35f * amb))
+    }
+
+    /** Volumetric shafts under every fixture that is actually burning. */
+    private fun drawLightCones(c: Canvas, d: Draw) {
+        for (dec in room.decor) {
+            if (dec.kind != Decor.Kind.LIGHT) continue
+            if (!camera.isVisible(dec.box, 6f)) continue
+            val powered = dec.lit || subfloorPowered || !room.needsPower
+            val tint = if (powered) dec.color else Palette.BAD
+            val flicker = if (powered) 0.8f + 0.2f * sin(time * 9.3f + dec.box.l) else 0.45f
+            val drop = (room.bounds.b - dec.box.b).coerceAtLeast(0.5f)
+            d.lightCone(
+                c,
+                camera.sx(dec.box.cx), camera.sy(dec.box.b),
+                camera.s(dec.box.w * 0.45f), camera.s(dec.box.w * 1.9f),
+                camera.s(drop), tint,
+                (if (powered) 1f else 0.55f) * flicker
+            )
         }
     }
 
@@ -786,7 +891,8 @@ class GameSession(
         val sy = camera.sy(player.y - player.height * 0.75f)
         val cx = camera.sx(cable.box.cx)
         val cy = camera.sy(cable.box.cy)
-        d.line(c, sx, sy, cx, cy + camera.s(0.18f), Palette.withAlpha(Palette.WARN, 0.75f), camera.s(0.07f))
+        d.line(c, sx, sy, cx, cy + camera.s(0.18f), Palette.withAlpha(Palette.VOID, 0.5f), camera.s(0.09f))
+        d.line(c, sx, sy, cx, cy + camera.s(0.18f), Palette.withAlpha(Palette.WARN, 0.8f), camera.s(0.06f))
     }
 
     private fun drawPeering(c: Canvas, d: Draw) {
@@ -795,6 +901,7 @@ class GameSession(
         val cy = camera.sy(-8.8f)
         val fade = MathX.clamp(1f - (cutTime - (PEER_SECONDS - 0.5f)) / 0.5f, 0f, 1f)
         val gap = camera.s(0.17f)
+        d.glow(c, cx, cy, camera.s(0.9f), Palette.MONSTER_CRACK, 0.5f * fade)
         d.glow(c, cx - gap, cy, camera.s(0.30f), Palette.MONSTER_EYE, 0.9f * fade)
         d.glow(c, cx + gap, cy, camera.s(0.30f), Palette.MONSTER_EYE, 0.9f * fade)
         d.circle(c, cx - gap, cy, camera.s(0.055f), Palette.withAlpha(Palette.MONSTER_EYE, fade))
@@ -807,10 +914,10 @@ class GameSession(
         val toX = camera.sx(player.x + 0.2f)
         val y = camera.sy(-0.55f)
         val handX = MathX.lerp(fromX, toX, reach)
+        d.glow(c, fromX, y, camera.s(1.1f), Palette.MONSTER_CRACK, 0.7f)
         d.glow(c, fromX, y, camera.s(0.6f), Palette.MONSTER_EYE, 0.8f)
         d.line(c, fromX, y, handX, y + camera.s(0.1f), Palette.MONSTER, camera.s(0.22f))
         d.circle(c, handX, y + camera.s(0.1f), camera.s(0.20f), Palette.MONSTER)
-        // Claws.
         for (i in -1..1) {
             d.line(c, handX, y + camera.s(0.1f), handX - camera.s(0.35f), y + camera.s(0.1f + i * 0.16f),
                 Palette.MONSTER, camera.s(0.06f))
@@ -820,14 +927,24 @@ class GameSession(
     }
 
     private fun drawLighting(c: Canvas, d: Draw, w: Float, h: Float) {
-        val dark = room.needsPower && !subfloorPowered
-        if (dark) {
+        if (room.needsPower && !subfloorPowered) {
             val cx = camera.sx(player.x)
             val cy = camera.sy(player.y - player.height * 0.5f)
-            d.darkness(c, w, h, cx, cy, camera.s(5.2f), Palette.VOID)
+            // Wide and soft. The old pool was so tight the room read as a black
+            // screen, which made judging a jump impossible.
+            d.darkness(
+                c, w, h, cx, cy, camera.s(10f),
+                Palette.mix(Palette.VOID, Palette.BG_NEAR, 0.30f), depth = 0.86f
+            )
+            // A soft carry-light around the figure so the metre in front of the
+            // player — the metre they have to judge a jump from — is readable.
+            d.glow(c, cx, cy, camera.s(5.0f), Palette.mix(Palette.ACCENT, Palette.TEXT, 0.45f), 0.34f)
         }
         val chaseHeat = if (stage == Stage.CHASE) (chaseTime / Chapter1.CHASE_SECONDS).coerceIn(0f, 1f) else 0f
-        d.vignette(c, w, h, 0.35f + chaseHeat * 0.35f, if (chaseHeat > 0f) Palette.mix(Palette.VOID, Palette.BAD, chaseHeat * 0.45f) else Palette.VOID)
+        d.vignette(
+            c, w, h, 0.34f + chaseHeat * 0.34f,
+            if (chaseHeat > 0f) Palette.mix(Palette.VOID, Palette.BAD, chaseHeat * 0.45f) else Palette.VOID
+        )
     }
 
     companion object {

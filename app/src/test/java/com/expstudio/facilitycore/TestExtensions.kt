@@ -5,3 +5,13 @@ import com.expstudio.facilitycore.game.GameSession
 
 fun GameSession.roomId(): String = room.id
 fun GameSession.cutIsDeath(): Boolean = cut == Cut.DEATH
+
+/** Test-only room placement; production code only moves via exits. */
+fun GameSession.enterRoomForTest(roomId: String, x: Float, y: Float = 0f) {
+    val target = level.rooms[roomId] ?: return
+    val field = GameSession::class.java.getDeclaredField("room")
+    field.isAccessible = true
+    field.set(this, target)
+    player.teleport(x, y)
+    camera.follow(x, y - 1.1f, target.bounds, 0f, snap = true)
+}

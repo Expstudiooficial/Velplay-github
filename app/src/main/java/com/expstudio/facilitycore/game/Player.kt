@@ -7,6 +7,8 @@ import com.expstudio.facilitycore.core.Draw
 import com.expstudio.facilitycore.core.MathX
 import com.expstudio.facilitycore.core.Palette
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 /**
@@ -51,6 +53,9 @@ class Player {
 
     /** Consumed by the session to play a footstep; avoids audio code in here. */
     var stepEvent = false
+    /** Pulses after a ledge pull-up so the pose can sell the effort. */
+    var mantleFlash = 0f
+        private set
 
     fun bounds(): Box = Box(x - WIDTH * 0.5f, y - height, x + WIDTH * 0.5f, y)
 
@@ -117,6 +122,8 @@ class Player {
         if (vy > MAX_FALL) vy = MAX_FALL
 
         moveAndCollide(dt, solids)
+        if (!onGround) tryMantle(input, solids)
+        if (mantleFlash > 0f) mantleFlash = (mantleFlash - dt * 4f).coerceAtLeast(0f)
 
         if (onGround && abs(vx) > 0.35f) {
             val rate = abs(vx) / maxSpeed
@@ -181,6 +188,48 @@ class Player {
         }
     }
 
+    /**
+     * Ledge pull-up. Without it, jumping while pressed against a waist-high
+     * crate is unwinnable: the horizontal solver zeroes the run-up on contact,
+     * so the figure rises straight up and drops back down in place. Anyone who
+     * walks into an obstacle and taps JUMP — which is what a player actually
+     * does — gets pulled over it instead.
+     */
+    private fun tryMantle(input: Float, solids: List<Box>): Boolean {
+        if (abs(input) < 0.25f) return false
+        // Only once the climb is topping out, never on the way up.
+        if (vy < -4f) return false
+        val dir = if (input > 0f) 1f else -1f
+        val b = bounds()
+
+        var ledge: Box? = null
+        var ledgeTop = 0f
+        for (s in solids) {
+            val top = s.t
+            // The ledge has to sit just above the feet...
+            if (top > y + 0.02f || top < y - MANTLE_RISE) continue
+            // ...and be in front of us, or already under our leading edge.
+            val gap = if (dir > 0f) s.l - b.r else b.l - s.r
+            if (gap > MANTLE_REACH) continue
+            if (dir > 0f && s.r < b.l) continue
+            if (dir < 0f && s.l > b.r) continue
+            if (ledge == null || top > ledgeTop) { ledge = s; ledgeTop = top }
+        }
+        val target = ledge ?: return false
+
+        val landX = if (dir > 0f) max(x, target.l + WIDTH * 0.55f) else min(x, target.r - WIDTH * 0.55f)
+        val landY = ledgeTop - EPS
+        val landing = boundsAt(landX, landY, height)
+        for (s in solids) if (landing.overlaps(s)) return false
+
+        x = landX
+        y = landY
+        vy = 0f
+        onGround = true
+        mantleFlash = 1f
+        return true
+    }
+
     private fun canFit(px: Float, py: Float, h: Float, solids: List<Box>): Boolean {
         val b = boundsAt(px, py, h)
         for (s in solids) if (b.overlaps(s)) return false
@@ -192,57 +241,114 @@ class Player {
         val sx = cam.sx(x)
         val feetY = cam.sy(y)
         val hPx = cam.s(height)
-        val squash = 1f - landSquash * 0.14f
+        // Landing squash, plus a short pop coming out of a ledge pull-up.
+        val squash = 1f - landSquash * 0.14f + mantleFlash * 0.05f
         val bodyTop = feetY - hPx * squash
 
-        // Contact shadow.
-        d.circle(c, sx, feetY + cam.s(0.03f), cam.s(0.42f * (1f - crouchBlend * 0.25f)),
-            Palette.withAlpha(0xFF000000.toInt(), 0.35f))
+        // Contact shadow: tight and dark when planted, wide and faint in the air.
+        val air = if (onGround) 0f else MathX.clamp(abs(vy) / 9f, 0f, 1f)
+        d.ellipse(
+            c, sx, feetY + cam.s(0.02f),
+            cam.s(0.46f * (1f - crouchBlend * 0.22f)) * (1f + air * 0.5f),
+            cam.s(0.13f) * (1f - air * 0.35f),
+            Palette.withAlpha(0xFF000000.toInt(), 0.45f * (1f - air * 0.55f))
+        )
 
-        val headR = cam.s(0.235f)
-        val headY = bodyTop + headR * 1.05f
-        val hipY = feetY - hPx * 0.44f * squash
-        val shoulderY = bodyTop + headR * 2.3f
+        // --- skeleton -----------------------------------------------------
+        val headR = cam.s(0.225f)
+        val headY = bodyTop + headR * 1.02f
+        val shoulderY = bodyTop + headR * 2.15f
+        val hipY = feetY - hPx * 0.47f * squash
+        val shW = cam.s(0.235f)
+        val hipW = cam.s(0.165f)
+        val legW = cam.s(0.155f)
+        val armW = cam.s(0.115f)
         val swing = sin(walkPhase)
         val swing2 = sin(walkPhase + Math.PI.toFloat())
-        val legLen = hipY - feetY
-        val stride = cam.s(0.30f) * (if (onGround) 1f else 0.35f)
+        val stride = cam.s(0.34f) * (if (onGround) 1f else 0.35f)
+        // A little daylight between the feet so an idle pose is not one stick.
+        val stance = cam.s(0.10f)
+        val footL = sx - stance + swing * stride
+        val footR = sx + stance + swing2 * stride
+        val hipL = sx - hipW * 0.45f
+        val hipR = sx + hipW * 0.45f
 
-        val limb = cam.s(0.085f)
-        // Legs.
-        d.line(c, sx, hipY, sx + swing * stride, feetY, Palette.PLAYER_SHADE, limb * 2f)
-        d.line(c, sx, hipY, sx + swing2 * stride, feetY, Palette.PLAYER, limb * 2f)
+        val armDrop = (hipY - shoulderY) * 1.30f
+        val armSwing = cam.s(0.26f) * (if (onGround) 1f else 0.25f)
+        val shoulderL = sx - shW * 0.72f
+        val shoulderR = sx + shW * 0.72f
+        val handL = shoulderL + swing2 * armSwing
+        val handR = shoulderR + swing * armSwing
+        val handY = shoulderY + armDrop
 
-        // Torso as a tapered quad: the whole "low poly" read comes from this.
-        val shW = cam.s(0.19f)
-        val hipW = cam.s(0.14f)
+        val tilt = facing * cam.s(0.045f)
+
+        // --- rim pass: the same figure, a shade fatter, in a cold tint ------
+        // It reads as light wrapping the silhouette and keeps the figure off
+        // the near-black backgrounds.
+        val rim = Palette.withAlpha(Palette.ACCENT, 0.32f)
+        val grow = cam.s(0.035f)
+        d.line(c, hipL, hipY, footL, feetY, rim, legW + grow * 2f)
+        d.line(c, hipR, hipY, footR, feetY, rim, legW + grow * 2f)
+        d.line(c, shoulderL, shoulderY, handL, handY, rim, armW + grow * 2f)
+        d.line(c, shoulderR, shoulderY, handR, handY, rim, armW + grow * 2f)
         d.poly(
             c,
             floatArrayOf(
-                sx - shW, shoulderY,
-                sx + shW, shoulderY,
-                sx + hipW, hipY,
-                sx - hipW, hipY
+                sx - shW - grow, shoulderY - grow,
+                sx + shW + grow, shoulderY - grow,
+                sx + hipW + grow, hipY + grow,
+                sx - hipW - grow, hipY + grow
             ),
+            rim
+        )
+        d.circle(c, sx + tilt, headY, headR + grow, rim)
+
+        // --- body ----------------------------------------------------------
+        // Far limbs first, in shade, so the figure has front and back.
+        d.line(c, hipL, hipY, footL, feetY, Palette.PLAYER_SHADE, legW)
+        if (!carrying) d.line(c, shoulderL, shoulderY, handL, handY, Palette.PLAYER_SHADE, armW)
+
+        d.poly(
+            c,
+            floatArrayOf(sx - shW, shoulderY, sx + shW, shoulderY, sx + hipW, hipY, sx - hipW, hipY),
             Palette.PLAYER
         )
+        // Shade down the trailing side of the torso.
+        d.poly(
+            c,
+            floatArrayOf(
+                sx + shW * 0.3f, shoulderY,
+                sx + shW, shoulderY,
+                sx + hipW, hipY,
+                sx + hipW * 0.3f, hipY
+            ),
+            Palette.withAlpha(Palette.PLAYER_SHADE, 0.7f)
+        )
+        // Collar line: a single detail that gives the torso a top.
+        d.line(
+            c, sx - shW * 0.8f, shoulderY + cam.s(0.05f), sx + shW * 0.8f, shoulderY + cam.s(0.05f),
+            Palette.withAlpha(Palette.BG_FAR, 0.30f), cam.s(0.035f)
+        )
 
-        // Arms.
-        val armY = shoulderY + cam.s(0.06f)
+        // Near limbs on top.
+        d.line(c, hipR, hipY, footR, feetY, Palette.PLAYER, legW)
         if (carrying) {
-            val reachX = sx + facing * cam.s(0.42f)
-            d.line(c, sx - shW * 0.4f, armY, reachX, armY + cam.s(0.18f), Palette.PLAYER_SHADE, limb * 1.8f)
-            d.line(c, sx + shW * 0.4f, armY, reachX, armY + cam.s(0.10f), Palette.PLAYER, limb * 1.8f)
+            // Both arms forward, taking the weight of the coil.
+            val reachX = sx + facing * cam.s(0.44f)
+            d.line(c, shoulderL, shoulderY, reachX, shoulderY + cam.s(0.30f), Palette.PLAYER_SHADE, armW)
+            d.line(c, shoulderR, shoulderY, reachX, shoulderY + cam.s(0.22f), Palette.PLAYER, armW)
         } else {
-            val armSwing = cam.s(0.24f) * (if (onGround) 1f else 0.2f)
-            d.line(c, sx, armY, sx + swing2 * armSwing, armY + legLen * -0.55f, Palette.PLAYER_SHADE, limb * 1.7f)
-            d.line(c, sx, armY, sx + swing * armSwing, armY + legLen * -0.55f, Palette.PLAYER, limb * 1.7f)
+            d.line(c, shoulderR, shoulderY, handR, handY, Palette.PLAYER, armW)
         }
 
-        // Head with a faint forward tilt so facing is legible without a face.
-        val tilt = facing * cam.s(0.045f)
+        // --- head -----------------------------------------------------------
+        d.glow(c, sx + tilt, headY, headR * 3.0f, Palette.PLAYER, 0.30f)
         d.circle(c, sx + tilt, headY, headR, Palette.PLAYER)
-        d.circle(c, sx + tilt + facing * headR * 0.35f, headY - headR * 0.1f, headR * 0.22f,
+        // Terminator across the head, away from the facing direction.
+        d.circle(c, sx + tilt - facing * headR * 0.34f, headY + headR * 0.14f, headR * 0.80f,
+            Palette.withAlpha(Palette.PLAYER_SHADE, 0.50f))
+        d.circle(c, sx + tilt + facing * headR * 0.36f, headY - headR * 0.10f, headR * 0.20f,
             Palette.withAlpha(Palette.BG_FAR, 0.55f))
 
         // Breathing shimmer: tiny, but it stops the idle pose looking frozen.
@@ -266,11 +372,15 @@ class Player {
         const val GROUND_FRICTION = 30f
         const val AIR_FRICTION = 7f
         const val GRAVITY = 27f
-        const val JUMP_SPEED = 8.7f
+        const val JUMP_SPEED = 9.2f
         const val MAX_FALL = 21f
         const val COYOTE = 0.11f
         const val JUMP_BUFFER = 0.12f
         const val GROUND_PROBE = 0.10f
+        /** How far above the feet a ledge can be and still be pulled onto. */
+        const val MANTLE_RISE = 0.62f
+        /** Horizontal gap that still counts as being at the ledge. */
+        const val MANTLE_REACH = 0.42f
         const val EPS = 0.001f
     }
 }

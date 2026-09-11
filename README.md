@@ -15,7 +15,7 @@ power, no people, and something in the dark that used to be one.
 | Control | Where | What it does |
 |---|---|---|
 | Stick | Touch anywhere on the left half and drag | Move. The stick floats to your thumb. |
-| **JUMP** | Bottom right | Clears a 1.4 m step and a 2.8 m gap. |
+| **JUMP** | Bottom right | Clears a 1.6 m step and a 3 m gap. Walk into a crate and tap JUMP and you pull yourself up onto it — no run-up needed. |
 | **SNEAK** | Bottom right | Crouch. The only way through low gaps and ducts. |
 | **USE** | Right, above JUMP | Lights up whenever something is in reach. |
 | **II** | Top right | Pause, restart from the checkpoint, or quit. |
@@ -90,18 +90,39 @@ app/src/main/java/com/expstudio/facilitycore/
 ```
 
 Everything is drawn to a `Canvas`: no game engine, no art assets, no image
-files. The whole look comes from flat fills, a ten-colour palette and a single
-lit edge on every surface.
+files. The whole look is generated — three parallax layers of structure built
+deterministically per room, volumetric shafts under every fixture, gradient-shaded
+surfaces with lit lips and contact shadows, drifting dust, and a carry-light that
+keeps unpowered rooms readable without lifting the dark.
+
+Rendering goes through the hardware canvas where the device offers one, and the
+expensive falloffs (glows, the darkness pool, the vignette) are baked into small
+cached bitmaps rather than shaded per pixel — that alone took a frame from 45 ms
+to 26 ms on the software path.
 
 ### Tests
 
 The suite is mostly simulation rather than unit assertions. A bot drives the
 real physics and the real story machine with nothing but the inputs a player
 has, and `PlaythroughTest` plays Chapter 1 from the intake hall to the closing
-scene — so a level change that strands the player fails the build. Alongside it,
-`LevelIntegrityTest` checks the level graph and spawn points, `ProgressionTest`
-checks every saveable stage loads into a finishable world, and `TraversalTest`
-proves each climb is jumpable and that the chase is both winnable and lethal.
+scene — so a level change that strands the player fails the build.
+
+- `ObstacleTest` walks the player flush into every obstacle in the game, kills
+  the run-up, then taps JUMP — from both sides. This is the guard for "I can't
+  jump over this".
+- `MantleTest` checks the ledge pull-up cannot be abused: the sealed door's
+  ledge still needs its staircase, the chase bulkhead still has to be crawled,
+  and no pull-up ever ends inside geometry.
+- `LevelIntegrityTest` checks the room graph and every spawn point.
+- `ProgressionTest` checks every saveable stage loads into a finishable world.
+- `TraversalTest` proves each climb is jumpable and the chase both winnable and
+  lethal.
+- `ScreenshotTest` and `RenderCostTest` rasterise real frames off-device, to
+  `app/build/screenshots/`, so the art direction and the frame budget can be
+  looked at rather than assumed.
+
+The last two use Robolectric, which downloads its Android runtime on first run;
+everything else is plain JVM and works offline.
 
 ## Licence
 

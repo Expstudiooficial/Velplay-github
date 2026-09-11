@@ -3,6 +3,7 @@ package com.expstudio.facilitycore.game
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.os.Build
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -120,6 +121,44 @@ class GameView(
         controls.reset()
     }
 
+    // ---- canvas ----------------------------------------------------------
+
+    private var lockedHardware = false
+
+    /**
+     * Prefers a GPU canvas. The default SurfaceView lock path rasterises in
+     * software, which the gradients, glows and full-screen passes this renderer
+     * leans on would make expensive; on the hardware canvas they are close to
+     * free. Falls back to the software path wherever that is not available.
+     */
+    private fun lockCanvas(): Canvas? {
+        val surface = holder.surface
+        if (surface == null || !surface.isValid) return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val c = surface.lockHardwareCanvas()
+                if (c != null) { lockedHardware = true; return c }
+            } catch (t: Throwable) {
+                // Fall through to the software canvas below.
+            }
+        }
+        return try {
+            lockedHardware = false
+            holder.lockCanvas()
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    private fun unlockCanvas(canvas: Canvas) {
+        try {
+            if (lockedHardware) holder.surface.unlockCanvasAndPost(canvas)
+            else holder.unlockCanvasAndPost(canvas)
+        } catch (t: Throwable) {
+            // The surface went away mid-frame; the next lock will fail cleanly.
+        }
+    }
+
     // ---- loop ------------------------------------------------------------
 
     override fun run() {
@@ -149,12 +188,12 @@ class GameView(
                 fpsFrames = 0
             }
 
-            val canvas = try { holder.lockCanvas() } catch (t: Throwable) { null }
+            val canvas = lockCanvas()
             if (canvas != null) {
                 try {
                     synchronized(sessionLock) { render(canvas) }
                 } finally {
-                    try { holder.unlockCanvasAndPost(canvas) } catch (t: Throwable) { /* surface gone */ }
+                    unlockCanvas(canvas)
                 }
             }
 
@@ -303,9 +342,16 @@ class GameView(
         val size = h * 0.036f
         val tw = draw.measure(objective, size, true)
         val pad = h * 0.022f
-        draw.round(c, w * 0.5f - tw * 0.5f - pad, pad * 0.7f, w * 0.5f + tw * 0.5f + pad, pad * 0.7f + size * 2f,
-            size, Palette.withAlpha(Palette.VOID, 0.55f))
-        draw.textCentered(c, objective, w * 0.5f, pad * 0.7f + size, size, Palette.withAlpha(Palette.TEXT, 0.92f), true)
+        val rl = w * 0.5f - tw * 0.5f - pad
+        val rr = w * 0.5f + tw * 0.5f + pad
+        val rt = pad * 0.7f
+        val rb = rt + size * 2f
+        draw.round(c, rl, rt, rr, rb, size, Palette.withAlpha(Palette.VOID, 0.62f))
+        draw.roundStroke(c, rl, rt, rr, rb, size, Palette.withAlpha(Palette.ACCENT, 0.30f), 2f)
+        // Accent pips either side, so the ribbon reads as part of the facility.
+        draw.circle(c, rl + pad * 0.55f, (rt + rb) * 0.5f, size * 0.16f, Palette.withAlpha(Palette.ACCENT, 0.8f))
+        draw.circle(c, rr - pad * 0.55f, (rt + rb) * 0.5f, size * 0.16f, Palette.withAlpha(Palette.ACCENT, 0.8f))
+        draw.textCentered(c, objective, w * 0.5f, (rt + rb) * 0.5f, size, Palette.withAlpha(Palette.TEXT, 0.95f), true)
 
         // Pause button.
         draw.circle(c, pauseButton.cx, pauseButton.cy, pauseButton.radius, Palette.withAlpha(Palette.VOID, 0.45f))
