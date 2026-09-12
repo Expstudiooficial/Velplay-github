@@ -17,8 +17,10 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.expstudio.facilitycore.core.Palette
 import com.expstudio.facilitycore.game.Stage
+import com.expstudio.facilitycore.game.Stage2
 import com.expstudio.facilitycore.save.WorldSave
 import com.expstudio.facilitycore.save.WorldStore
+import com.expstudio.facilitycore.update.UpdateService
 
 /**
  * Main menu, world slots and settings. One activity swapping its content view,
@@ -39,6 +41,7 @@ class MenuActivity : AppCompatActivity() {
         setContentView(container)
         UiKit.goFullscreen(this)
         show(Screen.MAIN)
+        if (store.settings.autoCheckUpdates) UpdateUi.check(this, store, quiet = true)
     }
 
     override fun onResume() {
@@ -159,8 +162,11 @@ class MenuActivity : AppCompatActivity() {
         name.letterSpacing = 0.04f
         card.addView(name)
 
-        val percent = ((world.stage.toFloat() / Stage.COMPLETE) * 100f).toInt().coerceIn(0, 100)
-        val status = if (world.completed) "Complete" else "$percent% — ${Stage.objectiveFor(world.stage)}"
+        val finalStage = if (world.chapter >= 2) Stage2.COMPLETE else Stage.COMPLETE
+        val percent = ((world.stage.toFloat() / finalStage) * 100f).toInt().coerceIn(0, 100)
+        val objective = if (world.chapter >= 2) Stage2.objectiveFor(world.stage)
+        else Stage.objectiveFor(world.stage)
+        val status = if (world.completed) "Complete" else "$percent% — $objective"
         card.addView(
             UiKit.label(this, "Chapter ${world.chapter}  ·  $status", 12f),
             UiKit.lp(this, marginDp = 0f)
@@ -293,10 +299,6 @@ class MenuActivity : AppCompatActivity() {
     }
 
     private fun launch(world: WorldSave) {
-        if (world.chapter == 2) {
-            toast("Chapter 2 isn't built yet — this world is reserved for it.")
-            return
-        }
         startActivity(Intent(this, GameActivity::class.java).putExtra(GameActivity.EXTRA_WORLD_ID, world.id))
     }
 
@@ -311,53 +313,128 @@ class MenuActivity : AppCompatActivity() {
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         header.addView(UiKit.smallButton(this, "Back", Palette.TEXT_DIM) { show(Screen.MAIN) })
         root.addView(header, UiKit.lp(this, ViewGroup.LayoutParams.MATCH_PARENT))
-        root.addView(UiKit.spacer(this, 14f))
+        root.addView(UiKit.spacer(this, 10f))
 
         val scroll = ScrollView(this)
         val list = UiKit.column(this, Gravity.START)
 
+        list.addView(section("AUDIO"))
         list.addView(toggle("Sound effects", store.settings.sfxEnabled) { store.settings.sfxEnabled = it })
         list.addView(toggle("Ambience", store.settings.ambienceEnabled) { store.settings.ambienceEnabled = it })
+
+        list.addView(section("FEEL"))
         list.addView(toggle("Haptics", store.settings.hapticsEnabled) { store.settings.hapticsEnabled = it })
+        list.addView(
+            stepper(
+                "Screen shake",
+                { percent(store.settings.shakeAmount) },
+                { store.settings.shakeAmount -= 0.25f },
+                { store.settings.shakeAmount += 0.25f }
+            )
+        )
+        list.addView(
+            stepper(
+                "Control size",
+                { percent(store.settings.controlScale) },
+                { store.settings.controlScale -= 0.1f },
+                { store.settings.controlScale += 0.1f }
+            )
+        )
+        list.addView(toggle("Left-handed layout", store.settings.leftHanded) { store.settings.leftHanded = it })
+
+        list.addView(section("VIDEO"))
+        list.addView(
+            stepper(
+                "Brightness",
+                { percent(store.settings.brightness * 2f) },
+                { store.settings.brightness -= 0.1f },
+                { store.settings.brightness += 0.1f }
+            )
+        )
+        list.addView(toggle("Effects & particles", store.settings.effectsEnabled) { store.settings.effectsEnabled = it })
         list.addView(toggle("Show FPS", store.settings.showFps) { store.settings.showFps = it })
 
-        val scaleRow = UiKit.row(this)
-        val scaleLabel = UiKit.label(this, controlScaleText(), 14f, Palette.TEXT)
-        scaleRow.addView(scaleLabel, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        scaleRow.addView(UiKit.smallButton(this, "-", Palette.TEXT_DIM) {
-            store.settings.controlScale = store.settings.controlScale - 0.1f
-            scaleLabel.text = controlScaleText()
-        }, UiKit.lp(this, marginDp = 4f))
-        scaleRow.addView(UiKit.smallButton(this, "+", Palette.TEXT_DIM) {
-            store.settings.controlScale = store.settings.controlScale + 0.1f
-            scaleLabel.text = controlScaleText()
-        }, UiKit.lp(this, marginDp = 4f))
-        list.addView(scaleRow, UiKit.lp(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 6f))
-
-        list.addView(UiKit.spacer(this, 16f))
-        list.addView(UiKit.label(this, "CONTROLS", 12f, Palette.ACCENT))
+        list.addView(section("HELP"))
+        list.addView(toggle("Contextual hints", store.settings.hintsEnabled) { store.settings.hintsEnabled = it })
         list.addView(
             UiKit.label(
                 this,
                 "Left half of the screen is a floating stick — touch anywhere and drag.\n" +
-                    "JUMP and SNEAK sit bottom-right; SNEAK also lets you fit through low gaps.\n" +
-                    "USE lights up when something is in reach.",
+                    "JUMP, SNEAK and DODGE sit on the right; USE lights up when something is in reach.\n" +
+                    "Walk into a crate and tap JUMP to pull yourself up. If a gap is too low to walk\n" +
+                    "through, the game will tell you to hold SNEAK.",
                 12f
             ),
             UiKit.lp(this, marginDp = 4f)
         )
 
+        list.addView(section("UPDATES"))
+        list.addView(
+            UiKit.label(
+                this,
+                "Installed: ${UpdateService.currentVersionName(this)} " +
+                    "(build ${UpdateService.currentVersionCode(this)})",
+                13f, Palette.TEXT
+            )
+        )
+        list.addView(
+            UiKit.button(this, "Check for updates", Palette.ACCENT) {
+                UpdateUi.check(this, store, quiet = false)
+            },
+            UiKit.lp(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 6f)
+        )
+        list.addView(toggle("Check on launch", store.settings.autoCheckUpdates) { store.settings.autoCheckUpdates = it })
+        list.addView(
+            UiKit.label(
+                this,
+                "Updates install over this version and keep every world.",
+                11f
+            ),
+            UiKit.lp(this, marginDp = 2f)
+        )
+
         list.addView(UiKit.spacer(this, 12f))
         val unlock = if (store.settings.chapter2Unlocked) "Chapter 2 world creation: unlocked"
         else "Chapter 2 world creation: locked"
-        list.addView(UiKit.label(this, unlock, 12f, if (store.settings.chapter2Unlocked) Palette.GOOD else Palette.TEXT_DIM))
+        list.addView(
+            UiKit.label(this, unlock, 12f, if (store.settings.chapter2Unlocked) Palette.GOOD else Palette.TEXT_DIM)
+        )
+        list.addView(UiKit.spacer(this, 20f))
 
         scroll.addView(list, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
     }
 
-    private fun controlScaleText(): String = "Control size  ${(store.settings.controlScale * 100).toInt()}%"
+    private fun percent(value: Float): String = "${(value * 100).toInt()}%"
+
+    private fun section(title: String): View {
+        val label = UiKit.label(this, title, 12f, Palette.ACCENT)
+        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.topMargin = UiKit.dp(this, 16f)
+        lp.bottomMargin = UiKit.dp(this, 2f)
+        label.layoutParams = lp
+        return label
+    }
+
+    /** A labelled value with minus and plus buttons. */
+    private fun stepper(label: String, read: () -> String, minus: () -> Unit, plus: () -> Unit): View {
+        val row = UiKit.row(this)
+        val text = UiKit.label(this, "$label  ${read()}", 14f, Palette.TEXT)
+        row.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(UiKit.smallButton(this, "−", Palette.TEXT_DIM) {
+            minus()
+            text.text = "$label  ${read()}"
+        }, UiKit.lp(this, marginDp = 4f))
+        row.addView(UiKit.smallButton(this, "+", Palette.TEXT_DIM) {
+            plus()
+            text.text = "$label  ${read()}"
+        }, UiKit.lp(this, marginDp = 4f))
+        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.topMargin = UiKit.dp(this, 6f)
+        row.layoutParams = lp
+        return row
+    }
 
     private fun toggle(label: String, initial: Boolean, onChange: (Boolean) -> Unit): View {
         val row = UiKit.row(this)

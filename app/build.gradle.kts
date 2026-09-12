@@ -11,17 +11,42 @@ android {
         applicationId = "com.expstudio.facilitycore"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
+    }
+
+    /**
+     * One fixed key for every build, checked into the repo.
+     *
+     * Android refuses to install an update whose signature differs from the
+     * installed app, and the auto-generated debug keystore is created per
+     * machine — so every build from a different machine or CI run produced an
+     * APK that could only be installed by uninstalling the game first, losing
+     * every save. Signing with a key that lives in the repo makes any build
+     * update any earlier one.
+     *
+     * This key is therefore public. It is fine for sideloading a hobby game and
+     * would NOT be fine for a Play Store listing: publishing there needs a
+     * private upload key kept out of version control.
+     */
+    signingConfigs {
+        create("shared") {
+            storeFile = rootProject.file("keystore/facility-core.jks")
+            storePassword = "facilitycore"
+            keyAlias = "facilitycore"
+            keyPassword = "facilitycore"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 

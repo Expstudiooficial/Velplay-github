@@ -26,12 +26,13 @@ import kotlin.math.sin
 class GameView(
     context: Context,
     private val store: WorldStore,
+    chapter: Int,
     startStage: Int,
     seed: Long,
     private val audio: Sfx
 ) : SurfaceView(context), SurfaceHolder.Callback, Runnable {
 
-    val session = GameSession(startStage, seed, audio)
+    val session = GameSession(chapter, startStage, seed, audio)
 
     private val draw = Draw()
     private val controls = Controls()
@@ -71,7 +72,11 @@ class GameView(
         holder.addCallback(this)
         isFocusable = true
         controls.uiScale = store.settings.controlScale
+        controls.leftHanded = store.settings.leftHanded
+        session.camera.shakeScale = store.settings.shakeAmount
         session.onHaptic = { /* wired by the activity */ }
+        session.lightLift = store.settings.brightness
+        session.particles.enabled = store.settings.effectsEnabled
     }
 
     // ---- surface lifecycle ----------------------------------------------
@@ -215,12 +220,16 @@ class GameView(
         controls.update(dt)
         val jump = controls.jump.consumePress()
         val use = controls.interact.consumePress()
-        session.update(dt, controls.moveX, controls.sneakHeld, jump, use)
+        val roll = controls.dodge.consumePress()
+        session.update(dt, controls.moveX, controls.sneakHeld, jump, use, roll)
 
         controls.jump.enabled = session.player.controlEnabled
         controls.sneak.enabled = session.player.controlEnabled
         controls.interact.enabled = session.focusProp != null && session.player.controlEnabled
         controls.interact.label = if (session.focusLabel.isNotEmpty()) session.focusLabel else "USE"
+        controls.dodge.visible = session.dodgeUnlocked
+        controls.dodge.enabled = session.player.controlEnabled && session.player.dodgeReady
+        controls.dodgeCharge = session.player.dodgeChargeFraction
 
         if (session.completed && !completeShown) {
             completeShown = true
@@ -244,6 +253,10 @@ class GameView(
         if (e.actionMasked == MotionEvent.ACTION_DOWN) {
             // The closing card is the only screen with no pause button.
             if (session.cut == Cut.ENDING && session.endingProgress >= 0.99f) {
+                onQuit?.invoke()
+                return@synchronized true
+            }
+            if (session.cut == Cut.SMELTER_END && session.endingProgressCh2 >= 0.97f) {
                 onQuit?.invoke()
                 return@synchronized true
             }
@@ -311,6 +324,10 @@ class GameView(
 
         if (session.cut == Cut.ENDING) {
             drawEnding(c, w, h)
+        } else if (session.cut == Cut.CH2_OPENING) {
+            drawChapter2Opening(c, w, h)
+        } else if (session.cut == Cut.SMELTER_END) {
+            drawSmelterFinale(c, w, h)
         } else {
             session.render(c, draw, w, h)
             drawHud(c, w, h)
@@ -361,7 +378,11 @@ class GameView(
         draw.rect(c, pauseButton.cx + bar * 0.15f, pauseButton.cy - bar, pauseButton.cx + bar * 0.6f, pauseButton.cy + bar, Palette.TEXT)
 
         drawInventory(c, h)
-        if (session.crouchHint) drawCrouchHint(c, w, h)
+        if (session.maxHealth > 0) drawHealth(c, w, h)
+        if (session.hurtFlash > 0f) {
+            draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.BAD, 0.22f * session.hurtFlash / 0.45f))
+        }
+        if (session.crouchHint && store.settings.hintsEnabled) drawCrouchHint(c, w, h)
         if (session.dialogueVisible) drawDialogue(c, w, h)
     }
 
@@ -419,6 +440,25 @@ class GameView(
             size, Palette.withAlpha(Palette.WARN, 0.4f + pulse * 0.4f), 2.5f)
         draw.textCentered(c, text, cx, t + size * 1.05f, size,
             Palette.withAlpha(Palette.TEXT, 0.85f + pulse * 0.15f), true)
+    }
+
+    /** Pips for a set-piece fight. Only drawn while a fight is running. */
+    private fun drawHealth(c: Canvas, w: Float, h: Float) {
+        val r = h * 0.021f
+        val gap = r * 2.9f
+        val total = (session.maxHealth - 1) * gap
+        val cx = w * 0.5f - total * 0.5f
+        val cy = h * 0.115f
+        for (i in 0 until session.maxHealth) {
+            val x = cx + i * gap
+            val alive = i < session.health
+            draw.circle(c, x, cy, r * 1.35f, Palette.withAlpha(Palette.VOID, 0.55f))
+            draw.circleStroke(c, x, cy, r, Palette.withAlpha(if (alive) Palette.BAD else Palette.TEXT_DIM, 0.85f), 3f)
+            if (alive) {
+                draw.circle(c, x, cy, r * 0.62f, Palette.BAD)
+                draw.glow(c, x, cy, r * 2.4f, Palette.BAD, 0.5f)
+            }
+        }
     }
 
     private fun drawDialogue(c: Canvas, w: Float, h: Float) {
@@ -483,79 +523,22 @@ class GameView(
         if (fadeOut > 0f) draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.VOID, fadeOut))
     }
 
+    private val elevatorScene = ElevatorScene()
+
     /**
-     * Closing scene: the car drops away, and something lands on its roof.
-     * Drawn entirely in screen space so it can be framed exactly.
+     * Closing scene. The car drops away and something lands on the roof hard
+     * enough to cave it in; Chapter 1 cuts to black the moment the plate gives.
      */
     private fun drawEnding(c: Canvas, w: Float, h: Float) {
         val p = session.endingProgress
-        draw.rect(c, 0f, 0f, w, h, Palette.VOID)
-
-        val carW = MathX.min(w * 0.42f, h * 0.85f)
-        val carH = h * 0.62f
-        val cx = w * 0.5f
-        val carT = h * 0.22f
-        val carB = carT + carH
-        val shakeY = if (p > 0.62f) sin((p - 0.62f) * 140f) * h * 0.012f * ((p - 0.62f) / 0.38f) else 0f
-
-        // Shaft walls sliding upward sell the descent.
-        val bandH = h * 0.18f
-        var y = -((p * 7.5f * bandH) % bandH)
-        while (y < h) {
-            draw.rect(c, 0f, y, w, y + bandH * 0.10f, Palette.withAlpha(Palette.WALL_LIT, 0.45f))
-            y += bandH
+        elevatorScene.update(p)
+        if (elevatorScene.impactCue) {
+            audio.play(Sfx.Id.THUD)
+            audio.play(Sfx.Id.SCREAM)
+            session.onHaptic?.invoke(220)
         }
+        elevatorScene.draw(c, draw, w, h, session.time, p, ElevatorScene.Mode.CH1_ENDING)
 
-        // Car.
-        draw.rect(c, cx - carW * 0.5f, carT + shakeY, cx + carW * 0.5f, carB + shakeY,
-            Palette.mix(Palette.WALL, Palette.ACCENT_DIM, 0.18f))
-        draw.roundStroke(c, cx - carW * 0.5f, carT + shakeY, cx + carW * 0.5f, carB + shakeY, h * 0.01f,
-            Palette.TRIM, 4f)
-        draw.rect(c, cx - carW * 0.5f, carB - h * 0.02f + shakeY, cx + carW * 0.5f, carB + shakeY, Palette.TRIM)
-        draw.glow(c, cx, carT + h * 0.05f + shakeY, carW * 0.45f, Palette.ACCENT, 0.5f)
-
-        // The white figure, standing very still.
-        val feetY = carB - h * 0.035f + shakeY
-        val fh = h * 0.30f
-        val fx = cx
-        draw.circle(c, fx, feetY, fh * 0.10f, Palette.withAlpha(Palette.VOID, 0.5f))
-        draw.line(c, fx, feetY - fh * 0.44f, fx - fh * 0.07f, feetY, Palette.PLAYER_SHADE, fh * 0.055f)
-        draw.line(c, fx, feetY - fh * 0.44f, fx + fh * 0.07f, feetY, Palette.PLAYER, fh * 0.055f)
-        draw.poly(
-            c,
-            floatArrayOf(
-                fx - fh * 0.11f, feetY - fh * 0.80f,
-                fx + fh * 0.11f, feetY - fh * 0.80f,
-                fx + fh * 0.08f, feetY - fh * 0.44f,
-                fx - fh * 0.08f, feetY - fh * 0.44f
-            ),
-            Palette.PLAYER
-        )
-        draw.circle(c, fx, feetY - fh * 0.90f, fh * 0.13f, Palette.PLAYER)
-
-        // The landing.
-        if (p > GameSession.LANDING_CUE) {
-            val k = MathX.clamp((p - GameSession.LANDING_CUE) / 0.14f, 0f, 1f)
-            val roofY = carT + shakeY
-            val mh = h * 0.34f * MathX.lerp(0.5f, 1f, k)
-            session.monster.drawAt(c, draw, cx, roofY + mh, mh, session.time)
-            if (k >= 1f) {
-                draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.BAD, 0.10f * (0.5f + 0.5f * sin(p * 90f))))
-            }
-        }
-
-        // Screaming face fills the frame, then black.
-        if (p > 0.76f) {
-            val k = MathX.clamp((p - 0.76f) / 0.16f, 0f, 1f)
-            val r = h * 0.55f * k
-            draw.circle(c, cx, h * 0.5f, r, Palette.withAlpha(Palette.MONSTER, k))
-            val gap = r * 0.36f
-            draw.glow(c, cx - gap, h * 0.46f, r * 0.45f, Palette.MONSTER_EYE, 1.5f * k)
-            draw.glow(c, cx + gap, h * 0.46f, r * 0.45f, Palette.MONSTER_EYE, 1.5f * k)
-        }
-        if (p > 0.88f) {
-            draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.VOID, MathX.clamp((p - 0.88f) / 0.10f, 0f, 1f)))
-        }
         if (p >= 0.99f) {
             draw.textCentered(c, "CHAPTER 1 COMPLETE", w * 0.5f, h * 0.44f, h * 0.075f, Palette.TEXT, true)
             draw.textCentered(c, "Subfloor 1 unlocked in world creation", w * 0.5f, h * 0.54f, h * 0.036f, Palette.TEXT_DIM)
@@ -564,6 +547,48 @@ class GameView(
                 Palette.withAlpha(Palette.ACCENT, hint), true)
         }
     }
+
+    /**
+     * Chapter 2 opens on the same moment Chapter 1 closed on, and keeps going:
+     * the hands take the torn plate and haul it wide enough to come through.
+     */
+    private fun drawChapter2Opening(c: Canvas, w: Float, h: Float) {
+        val p = session.endingProgressCh2
+        elevatorScene.update(p)
+        if (elevatorScene.impactCue) {
+            audio.play(Sfx.Id.THUD)
+            audio.play(Sfx.Id.SCREAM)
+            session.onHaptic?.invoke(220)
+        }
+        elevatorScene.draw(c, draw, w, h, session.time, p, ElevatorScene.Mode.CH2_OPENING)
+        if (p < 0.12f) {
+            draw.textCentered(c, "CHAPTER 2", w * 0.5f, h * 0.16f, h * 0.062f,
+                Palette.withAlpha(Palette.TEXT, 1f - p / 0.12f), true)
+            draw.textCentered(c, "SUBFLOOR 1", w * 0.5f, h * 0.23f, h * 0.030f,
+                Palette.withAlpha(Palette.ACCENT, 1f - p / 0.12f), true)
+        }
+    }
+
+    /** The closing shot: watched through the pour control window. */
+    private fun drawSmelterFinale(c: Canvas, w: Float, h: Float) {
+        val p = session.endingProgressCh2
+        smelterScene.draw(c, draw, w, h, session.time, p)
+        if (smelterScene.consumeImpact()) {
+            audio.play(Sfx.Id.SCREAM)
+            audio.play(Sfx.Id.RUMBLE)
+            session.onHaptic?.invoke(200)
+        }
+        if (p >= 0.97f) {
+            draw.textCentered(c, "CHAPTER 2 COMPLETE", w * 0.5f, h * 0.44f, h * 0.075f, Palette.TEXT, true)
+            draw.textCentered(c, "It went into the pour. Ren is still down there.",
+                w * 0.5f, h * 0.54f, h * 0.034f, Palette.TEXT_DIM)
+            val hint = 0.45f + 0.35f * sin(session.time * 3f)
+            draw.textCentered(c, "tap to return to the menu", w * 0.5f, h * 0.66f, h * 0.034f,
+                Palette.withAlpha(Palette.ACCENT, hint), true)
+        }
+    }
+
+    private val smelterScene = SmelterScene()
 
     private fun drawPauseSheet(c: Canvas, w: Float, h: Float) {
         draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.VOID, 0.78f))

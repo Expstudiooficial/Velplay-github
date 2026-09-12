@@ -63,6 +63,8 @@ class Controls {
     val jump = TouchButton("JUMP")
     val sneak = TouchButton("SNEAK")
     val interact = TouchButton("USE")
+    /** Chapter 2's roll. Hidden until a chapter turns it on. */
+    val dodge = TouchButton("DODGE").apply { visible = false }
 
     var moveX = 0f
         private set
@@ -87,6 +89,8 @@ class Controls {
 
     /** Scales the whole control layer, driven by the settings screen. */
     var uiScale = 1f
+    /** Mirrors the stick and the action buttons for left-handed play. */
+    var leftHanded = false
 
     fun layout(widthPx: Int, heightPx: Int) {
         screenW = widthPx.toFloat()
@@ -98,14 +102,20 @@ class Controls {
         jump.radius = r
         sneak.radius = r * 0.86f
         interact.radius = r * 0.98f
+        dodge.radius = r * 0.86f
 
         val margin = r * 1.35f
-        jump.cx = screenW - margin
+        // Mirror every x about the screen centre when left-handed.
+        fun px(fromRight: Float): Float = if (leftHanded) screenW - fromRight else fromRight
+        jump.cx = px(screenW - margin)
         jump.cy = screenH - margin
-        sneak.cx = screenW - margin - r * 2.25f
+        sneak.cx = px(screenW - margin - r * 2.25f)
         sneak.cy = screenH - margin * 0.72f
-        interact.cx = screenW - margin * 0.95f
+        interact.cx = px(screenW - margin * 0.95f)
         interact.cy = screenH - margin - r * 2.85f
+        // Above SNEAK, clear of every other hit area.
+        dodge.cx = px(screenW - margin - r * 2.35f)
+        dodge.cy = screenH - margin - r * 2.6f
     }
 
     fun reset() {
@@ -113,11 +123,11 @@ class Controls {
         stickActive = false
         moveX = 0f
         sneakHeld = false
-        jump.reset(); sneak.reset(); interact.reset()
+        jump.reset(); sneak.reset(); interact.reset(); dodge.reset()
     }
 
     fun update(dt: Float) {
-        jump.update(dt); sneak.update(dt); interact.update(dt)
+        jump.update(dt); sneak.update(dt); interact.update(dt); dodge.update(dt)
         sneakHeld = sneak.held
     }
 
@@ -147,9 +157,11 @@ class Controls {
 
     private fun claim(id: Int, x: Float, y: Float) {
         if (jump.contains(x, y)) { jump.press(id); return }
+        if (dodge.contains(x, y)) { dodge.press(id); return }
         if (sneak.contains(x, y)) { sneak.press(id); return }
         if (interact.contains(x, y)) { interact.press(id); return }
-        if (stickPointer == -1 && x < screenW * 0.55f) {
+        val onStickSide = if (leftHanded) x > screenW * 0.45f else x < screenW * 0.55f
+        if (stickPointer == -1 && onStickSide) {
             stickPointer = id
             stickActive = true
             stickOriginX = x
@@ -174,7 +186,7 @@ class Controls {
     }
 
     private fun release(id: Int) {
-        jump.release(id); sneak.release(id); interact.release(id)
+        jump.release(id); sneak.release(id); interact.release(id); dodge.release(id)
         if (id == stickPointer) {
             stickPointer = -1
             stickActive = false
@@ -192,7 +204,18 @@ class Controls {
         drawButton(c, d, jump, Palette.ACCENT)
         drawButton(c, d, sneak, Palette.TEXT_DIM)
         drawButton(c, d, interact, Palette.WARN)
+        drawButton(c, d, dodge, Palette.GOOD)
+        // A sweep around DODGE showing the cooldown refilling.
+        if (dodge.visible && dodgeCharge < 1f) {
+            d.circleStroke(
+                c, dodge.cx, dodge.cy, dodge.radius * 1.18f,
+                Palette.withAlpha(Palette.GOOD, 0.25f + 0.4f * dodgeCharge), 4f
+            )
+        }
     }
+
+    /** 0..1, mirrored from the player so the button can show its cooldown. */
+    var dodgeCharge = 1f
 
     private fun drawButton(c: Canvas, d: Draw, b: TouchButton, tint: Int) {
         if (!b.visible) return

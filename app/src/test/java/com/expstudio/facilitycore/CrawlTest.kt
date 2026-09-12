@@ -2,6 +2,7 @@ package com.expstudio.facilitycore
 
 import com.expstudio.facilitycore.core.Box
 import com.expstudio.facilitycore.game.Chapter1
+import com.expstudio.facilitycore.game.Chapter2
 import com.expstudio.facilitycore.game.GameSession
 import com.expstudio.facilitycore.game.Player
 import com.expstudio.facilitycore.game.Stage
@@ -19,7 +20,13 @@ class CrawlTest {
     private val dt = 1f / 60f
 
     /** A gap along the floor too low to walk through but tall enough to crawl. */
-    private class Gap(val roomId: String, val box: Box, val approachFromLeft: Boolean, val startX: Float)
+    private class Gap(
+        val chapter: Int,
+        val roomId: String,
+        val box: Box,
+        val approachFromLeft: Boolean,
+        val startX: Float
+    )
 
     /**
      * Finds low openings a walking player can run into. A duct entered from
@@ -27,27 +34,32 @@ class CrawlTest {
      * not one of these: there is no standing approach to announce anything on.
      */
     private fun findGaps(): List<Gap> {
-        val level = Chapter1.build()
         val out = ArrayList<Gap>()
+        for ((chapter, level) in listOf(1 to Chapter1.build(), 2 to Chapter2.build())) {
         for (room in level.rooms.values) {
             for (s in room.solids) {
                 val clearance = -s.box.b // height of the opening beneath it
                 if (clearance <= Player.CROUCH_HEIGHT + 0.05f) continue
                 if (clearance >= Player.STAND_HEIGHT) continue
                 if (s.box.w < 0.5f) continue
+                // A long duct is something you are already inside, not a gap
+                // you walk up to; those have their own entry gap to check.
+                if (s.box.w > 6f) continue
 
                 val fromLeft = s.box.l - 1.2f > room.bounds.l + 0.4f
                 val startX = if (fromLeft) s.box.l - 1.1f else s.box.r + 1.1f
                 if (startX < room.bounds.l + 0.4f || startX > room.bounds.r - 0.4f) continue
-                out.add(Gap(room.id, s.box, fromLeft, startX))
+                out.add(Gap(chapter, room.id, s.box, fromLeft, startX))
             }
+        }
         }
         return out
     }
 
-    private fun sessionAt(roomId: String, x: Float): GameSession {
-        val g = Bot.session(Stage.PANEL_UPLOADED)
-        g.enterRoomForTest(roomId, x)
+    private fun sessionAt(gap: Gap): GameSession {
+        val g = if (gap.chapter == 2) Bot.session(com.expstudio.facilitycore.game.Stage2.SMELTER_DOOR, chapter = 2)
+        else Bot.session(Stage.PANEL_UPLOADED)
+        g.enterRoomForTest(gap.roomId, gap.startX)
         return g
     }
 
@@ -60,7 +72,7 @@ class CrawlTest {
     fun everyCrawlGapAnnouncesItself() {
         for (gap in findGaps()) {
             val dir = if (gap.approachFromLeft) 1f else -1f
-            val g = sessionAt(gap.roomId, gap.startX)
+            val g = sessionAt(gap)
             // Skip a gap whose approach is not open standing ground.
             if (!g.player.canFit(gap.startX, 0f, Player.STAND_HEIGHT, g.solidsForTest())) continue
 
@@ -72,7 +84,7 @@ class CrawlTest {
                 t += dt
             }
             assertTrue(
-                "the gap in ${gap.roomId} at x=${gap.box.l}..${gap.box.r} never tells the " +
+                "the gap in chapter ${gap.chapter} ${gap.roomId} at x=${gap.box.l}..${gap.box.r} never tells the " +
                     "player to sneak; they just stop dead against it",
                 hinted
             )
@@ -83,7 +95,7 @@ class CrawlTest {
     fun everyCrawlGapCanActuallyBeCrawled() {
         for (gap in findGaps()) {
             val dir = if (gap.approachFromLeft) 1f else -1f
-            val g = sessionAt(gap.roomId, gap.startX)
+            val g = sessionAt(gap)
             if (!g.player.canFit(gap.startX, 0f, Player.STAND_HEIGHT, g.solidsForTest())) continue
 
             var t = 0f
@@ -96,7 +108,7 @@ class CrawlTest {
                 if (g.room.id != gap.roomId) { through = true } // crawled into the next room
             }
             assertTrue(
-                "the gap in ${gap.roomId} at x=${gap.box.l}..${gap.box.r} cannot be crawled " +
+                "the gap in chapter ${gap.chapter} ${gap.roomId} at x=${gap.box.l}..${gap.box.r} cannot be crawled " +
                     "through even while holding sneak",
                 through
             )

@@ -47,7 +47,7 @@ class GameActivity : AppCompatActivity() {
         // between sessions.
         val seed = loaded.id.hashCode().toLong() * 31L + loaded.createdAt
 
-        val gameView = GameView(this, store, loaded.stage, seed, audio)
+        val gameView = GameView(this, store, loaded.chapter, loaded.stage, seed, audio)
         gameView.session.onStageChanged = { stage -> persist(stage) }
         gameView.session.onHaptic = { ms -> vibrate(ms) }
         gameView.onQuit = { finishSession() }
@@ -93,7 +93,7 @@ class GameActivity : AppCompatActivity() {
         val w = world ?: return
         val v = view
         w.stage = maxOf(w.stage, stage)
-        w.checkpoint = Stage.checkpointFor(w.stage)
+        w.checkpoint = v?.session?.script?.checkpointFor(w.stage) ?: Stage.checkpointFor(w.stage)
         w.lastPlayedAt = System.currentTimeMillis()
         if (v != null) {
             // Only bank the time that has not been written yet.
@@ -103,18 +103,19 @@ class GameActivity : AppCompatActivity() {
                 savedSeconds = v.sessionSeconds
             }
         }
-        if (w.stage >= Stage.COMPLETE) w.completed = true
+        val finish = v?.session?.script?.completeStage ?: Stage.COMPLETE
+        if (w.stage >= finish) w.completed = true
         store.update(w)
     }
 
     private fun onChapterComplete() {
         val w = world ?: return
         w.completed = true
-        persist(Stage.COMPLETE)
-        store.settings.chapter2Unlocked = true
-        runOnUiThread {
-            Toast.makeText(this, "Chapter 1 complete — Chapter 2 worlds unlocked.", Toast.LENGTH_LONG).show()
-        }
+        persist(view?.session?.script?.completeStage ?: Stage.COMPLETE)
+        if (w.chapter == 1) store.settings.chapter2Unlocked = true
+        val message = if (w.chapter >= 2) "Chapter 2 complete."
+        else "Chapter 1 complete — Chapter 2 worlds unlocked."
+        runOnUiThread { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
     }
 
     private fun finishSession() {

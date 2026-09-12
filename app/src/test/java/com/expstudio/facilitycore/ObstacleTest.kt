@@ -3,6 +3,7 @@ package com.expstudio.facilitycore
 import com.expstudio.facilitycore.audio.Sfx
 import com.expstudio.facilitycore.core.Box
 import com.expstudio.facilitycore.game.Chapter1
+import com.expstudio.facilitycore.game.Chapter2
 import com.expstudio.facilitycore.game.GameSession
 import com.expstudio.facilitycore.game.Player
 import com.expstudio.facilitycore.game.Room
@@ -33,7 +34,7 @@ class ObstacleTest {
     private fun clears(room: Room, obstacle: Box, dir: Float): Boolean {
         // A session is only used for its solid list and physics; the player is
         // placed by hand, flush against the obstacle with no speed at all.
-        val g = GameSession(Stage.INTRO, 1L, Sfx())
+        val g = GameSession(1, Stage.INTRO, 1L, Sfx())
         g.camera.resize(1920, 1080)
         val solids = ArrayList<Box>()
         for (s in room.solids) solids.add(s.box)
@@ -70,8 +71,8 @@ class ObstacleTest {
 
     @Test
     fun everyFloorObstacleCanBeClearedFromAStandstill() {
-        val level = Chapter1.build()
         var checked = 0
+        for (level in listOf(Chapter1.build(), Chapter2.build())) {
         for (room in level.rooms.values) {
             for (obstacle in floorObstacles(room)) {
                 checked++
@@ -87,6 +88,7 @@ class ObstacleTest {
                 )
             }
         }
-        assertTrue("the level has no floor obstacles to check", checked >= 10)
+        }
+        assertTrue("the levels have no floor obstacles to check", checked >= 20)
     }
 }

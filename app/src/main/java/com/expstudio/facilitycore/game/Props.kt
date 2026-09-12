@@ -74,6 +74,9 @@ class KeyPackItem(box: Box) : Prop(box) {
 class CableCoil(box: Box, val id: String) : Prop(box) {
     var held = false
     var consumed = false
+    /** Where the run is anchored. The cable visibly pays out from here. */
+    val anchorX: Float = box.cx
+    val anchorY: Float = box.cy
 
     // A held coil sits in the player's hands, so it would always be the
     // nearest prop and would hide the station's THROW prompt behind it.
@@ -117,10 +120,15 @@ class CableCoil(box: Box, val id: String) : Prop(box) {
 class ConnectionStation(
     box: Box,
     val id: String,
-    /** Awards a data shard rather than powering a floor. */
-    val yieldsShard: Boolean = false
+    /** Awards a carryable rather than powering a floor. */
+    val yieldsShard: Boolean = false,
+    /** What the prompt says when that carryable is ready to take. */
+    val shardLabel: String = "TAKE SHARD"
 ) : Prop(box) {
     var connected = false
+    /** Where the seated cable runs back to, so it can be drawn for good. */
+    var anchorX = Float.NaN
+    var anchorY = Float.NaN
     var shardTaken = false
     /** 0 -> 1 while the thrown cable flies up to the socket. */
     var throwAnim = 0f
@@ -132,7 +140,7 @@ class ConnectionStation(
 
     override fun interactLabel(g: GameSession): String = when {
         throwing -> ""
-        connected && yieldsShard && !shardTaken -> "TAKE SHARD"
+        connected && yieldsShard && !shardTaken -> shardLabel
         connected -> ""
         g.carriedCable != null -> "THROW"
         else -> ""
@@ -150,6 +158,8 @@ class ConnectionStation(
         val cable = g.carriedCable ?: return
         fromX = cable.box.cx
         fromY = cable.box.cy
+        anchorX = cable.anchorX
+        anchorY = cable.anchorY
         throwing = true
         throwAnim = 0f
         g.onCableThrown(this)
@@ -171,8 +181,25 @@ class ConnectionStation(
         val l = cam.sx(box.l); val r = cam.sx(box.r)
         val t = cam.sy(box.t); val b = cam.sy(box.b)
         val tint = if (connected) Palette.GOOD else Palette.WARN
-        d.round(c, l, t, r, b, cam.s(0.08f), Palette.WALL_LIT)
-        d.roundStroke(c, l, t, r, b, cam.s(0.08f), tint, 2.5f)
+
+        // The seated run, drawn back to wherever the coil was lifted from.
+        if (connected && !anchorX.isNaN()) {
+            com.expstudio.facilitycore.core.Art.cable(
+                c, d,
+                cam.sx(anchorX), cam.sy(anchorY),
+                (l + r) * 0.5f, (t + b) * 0.5f,
+                cam.s(0.55f), cam.s(0.12f)
+            )
+        }
+
+        com.expstudio.facilitycore.core.Art.plate(
+            c, d, l, t, r, b,
+            Palette.mix(Palette.WALL_LIT, Palette.TRIM, 0.45f),
+            Palette.mix(Palette.WALL, Palette.VOID, 0.4f),
+            Palette.mix(Palette.TRIM, tint, 0.3f),
+            cam.scale, box.l
+        )
+        d.roundStroke(c, l, t, r, b, cam.s(0.08f), Palette.withAlpha(tint, 0.8f), 2.5f)
         // Three sockets; they fill in as the cable seats.
         var i = 0
         while (i < 3) {

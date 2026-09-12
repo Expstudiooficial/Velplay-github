@@ -36,7 +36,10 @@ class Bot(private val session: GameSession, private val dir: Float = 1f) {
         val x = player.x
         val y = player.y
         val moving = abs(player.vx) > 0.6f
-        if (!moving && player.controlEnabled) stalled += dt else stalled = (stalled - dt * 2f).coerceAtLeast(0f)
+        // Capped: a long block used to leave the bot crouch-walking for ten
+        // seconds after it was freed, which looks exactly like a game bug.
+        if (!moving && player.controlEnabled) stalled = (stalled + dt).coerceAtMost(1.5f)
+        else stalled = (stalled - dt * 2f).coerceAtLeast(0f)
 
         // How far to the edge of whatever we are standing on.
         var edgeDistance = Float.MAX_VALUE
@@ -87,8 +90,8 @@ class Bot(private val session: GameSession, private val dir: Float = 1f) {
     }
 
     companion object {
-        fun session(stage: Int): GameSession {
-            val s = GameSession(stage, 12345L, Sfx())
+        fun session(stage: Int, chapter: Int = 1): GameSession {
+            val s = GameSession(chapter, stage, 12345L, Sfx())
             s.camera.resize(1920, 1080)
             return s
         }

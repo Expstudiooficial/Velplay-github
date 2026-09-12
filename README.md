@@ -6,7 +6,8 @@ You are a white figure who walks into a forgotten facility because a friend said
 he was trapped inside — and he is the only thing you have left. The place has no
 power, no people, and something in the dark that used to be one.
 
-**Chapter 1 — Subfloor 0** is complete and playable.
+**Chapter 1 — Subfloor 0** and **Chapter 2 — Subfloor 1** are complete and
+playable.
 
 ---
 
@@ -17,6 +18,7 @@ power, no people, and something in the dark that used to be one.
 | Stick | Touch anywhere on the left half and drag | Move. The stick floats to your thumb. |
 | **JUMP** | Bottom right | Clears a 1.6 m step and a 3 m gap. Walk into a crate and tap JUMP and you pull yourself up onto it — no run-up needed. |
 | **SNEAK** | Bottom right | Crouch. The only way through low gaps and ducts — if something stops you that you could fit under, the game says so and lights the button. |
+| **DODGE** | Above SNEAK (Chapter 2) | Tuck into a roll and go. You are untouchable for most of it, and it is the only answer to a swing. |
 | **USE** | Right, above JUMP | Lights up whenever something is in reach. |
 | **II** | Top right | Pause, restart from the checkpoint, or quit. |
 
@@ -32,6 +34,14 @@ Finishing Chapter 1 in any world unlocks **Chapter 2** as a choice when creating
 new ones.
 
 Progress saves automatically at every checkpoint.
+
+### Settings
+
+Audio, haptics, screen shake, control size, a left-handed layout, brightness,
+effects and particles, contextual hints, an FPS readout — and **Check for
+updates**, which pulls a small manifest from this repository, tells you what is
+new and how big it is, downloads it, verifies its checksum and hands it to the
+installer. It installs **over** the version you have and keeps every world.
 
 ---
 
@@ -62,9 +72,41 @@ Thirteen connected rooms, roughly 20–30 minutes on a first run:
 9. **Return Vent** — crawl back. Something is waiting at the far end.
 10. The lift accepts the key. Then the chapter ends.
 
-Chapter 2 picks up on Subfloor 1.
+---
+
+## Chapter 2
+
+Picks up on the exact frame Chapter 1 ended on — and keeps going. Sixteen rooms:
+
+1. **The car** — it came down with you. Two hands take the torn roof and haul it
+   wide enough to climb through. Repair three systems (a severed loom, a breaker
+   bank, a brake valve) while it swings at you. **DODGE** is the only answer; you
+   have three hits in you.
+2. **Subfloor 1** — the doors are dead. Find a battery cube in the cell racks and
+   seat it in the gate socket.
+3. **The holding wing** — something takes the door off its hinges. It is not the
+   same thing. Red, violet and blue, and scarred to pieces. Run.
+4. **The hoist** — the pack on the hoist switch drops the ceiling claws. Hold
+   position while they read it, and they take you off the floor. It runs
+   straight underneath and never looks up.
+5. **The feeder gallery** — throw the feeder to the charger, take the cell it
+   cuts loose, and open the spine.
+6. **The coolant walk** — the thing from Chapter 1 finds you again, and this run
+   ends in a cell with no doors. The duct is the only way out.
+7. **The smelter** — feed the pour line before what is behind you catches up,
+   then get through the hatch. Watch the rest from behind the glass.
 
 ---
+
+## Installing and updating
+
+`dist/facility-core.apk` is the current build, and `latest.json` describes it.
+Every build is signed with the key in `keystore/`, so a new APK **installs over
+the one you have** and keeps your worlds — no uninstalling, no losing saves.
+
+That key is deliberately public. It is the right trade for sideloading a game to
+your own phone, and the wrong one for a Play Store listing, which needs a private
+upload key kept out of version control.
 
 ## Building
 
@@ -72,6 +114,7 @@ Requires the Android SDK (compileSdk 34) and JDK 17.
 
 ```bash
 ./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease        # what ships in dist/
 ./gradlew installDebug           # onto a connected device
 ./gradlew testDebugUnitTest      # the test suite
 ```
@@ -83,19 +126,29 @@ optional vibration.
 
 ```
 app/src/main/java/com/expstudio/facilitycore/
-  core/      geometry, camera, drawing primitives, virtual gamepad
-  game/      player and monster physics, level data, props, puzzles,
-             the chapter script, and the render/update loop
+  core/      geometry, camera, drawing primitives, materials, particles,
+             the virtual gamepad
+  game/      player and monster physics, level data, props, puzzles, the
+             per-chapter scripts, the cutscenes, and the render/update loop
   save/      world slots and settings (SharedPreferences + JSON)
   audio/     every sound synthesised at runtime — the APK ships no audio assets
+  update/    the manifest check, download and hand-off to the installer
   ui/        menu, world list, settings, and the game activity
 ```
 
+`ChapterScript` is the seam between the two chapters: the session owns physics,
+dialogue, interaction, the chase machinery and rendering, and calls into the
+script whenever the story has a decision to make.
+
 Everything is drawn to a `Canvas`: no game engine, no art assets, no image
-files. The whole look is generated — three parallax layers of structure built
-deterministically per room, volumetric shafts under every fixture, gradient-shaded
-surfaces with lit lips and contact shadows, drifting dust, and a carry-light that
-keeps unpowered rooms readable without lifting the dark.
+files. The whole look is generated. Plating derives its bolts, weld seams and
+rust streaks from its own coordinates, so the facility reads as hand-dressed
+without a single asset: tread floors, corner brackets, hazard stencils, pipe
+flanges, wear marks. Three parallax layers of structure per room, volumetric
+shafts under every fixture, a pooled particle system for sparks, embers, steam
+and debris, and a carry-light that keeps unpowered rooms readable without
+lifting the dark. Cables hang in a catenary and visibly pay out as you haul
+them.
 
 Rendering goes through the hardware canvas where the device offers one, and the
 expensive falloffs (glows, the darkness pool, the vignette) are baked into small
@@ -123,6 +176,10 @@ scene — so a level change that strands the player fails the build.
 - `ProgressionTest` checks every saveable stage loads into a finishable world.
 - `TraversalTest` proves each climb is jumpable, the chase both winnable and
   lethal, and the pursuer close enough to stay a threat.
+- `Chapter2Test` and `Chapter2PlaythroughTest` do the same for Chapter 2: the
+  lift fight is winnable, a dodge beats a swing, standing in one does not, the
+  hoist lifts you clear and puts you down, and the whole chapter plays from the
+  car to the pour.
 - `ScreenshotTest` and `RenderCostTest` rasterise real frames off-device, to
   `app/build/screenshots/`, so the art direction and the frame budget can be
   looked at rather than assumed.

@@ -3,10 +3,12 @@ package com.expstudio.facilitycore.game
 import android.graphics.Canvas
 import com.expstudio.facilitycore.audio.Sfx
 import com.expstudio.facilitycore.core.Box
+import com.expstudio.facilitycore.core.Art
 import com.expstudio.facilitycore.core.Camera
 import com.expstudio.facilitycore.core.Draw
 import com.expstudio.facilitycore.core.MathX
 import com.expstudio.facilitycore.core.Palette
+import com.expstudio.facilitycore.core.Particles
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -14,18 +16,26 @@ import kotlin.math.sin
 class Line(val text: String, val blocking: Boolean = true, val hold: Float = 0f)
 
 /** Scripted beats that take control away from the player. */
-enum class Cut { NONE, INTRO, ENCOUNTER, VENT_SWIPE, FALL, PEER, ENDING, DEATH }
+enum class Cut {
+    NONE, INTRO, ENCOUNTER, VENT_SWIPE, FALL, PEER, ENDING, DEATH,
+    // Chapter 2.
+    CH2_OPENING, CH2_FIGHT_INTRO, DOOR_BREAK, GRABBED, HOISTED, SMELTER_END
+}
 
 /**
  * Owns the running chapter: world state, the story state machine, and the
  * world-space rendering. The view above it only supplies input and time.
  */
 class GameSession(
+    val chapterNumber: Int,
     startStage: Int,
     val puzzleSeed: Long,
     private val audio: Sfx
 ) {
-    var level: Level = Chapter1.build()
+    /** The chapter being played. Owns every beat that is not shared. */
+    val script: ChapterScript = ChapterScript.forChapter(chapterNumber)
+
+    var level: Level = script.build()
         private set
     lateinit var room: Room
         private set
@@ -33,6 +43,7 @@ class GameSession(
     val player = Player()
     val monster = Monster()
     val camera = Camera()
+    val particles = Particles()
 
     var stage: Int = startStage
         private set
@@ -48,6 +59,8 @@ class GameSession(
     var shards = 0
     var carriedCable: CableCoil? = null
         private set
+    /** Chapter 2's battery cube, carried the same way a coil is. */
+    var carriedCube: PowerCube? = null
 
     // Presentation state read by the HUD.
     var cut = Cut.NONE
@@ -63,6 +76,19 @@ class GameSession(
     private var fadeTarget = 0f
     var endingProgress = 0f
         private set
+    /** Progress through a Chapter 2 cutscene, driven by that chapter's script. */
+    var endingProgressCh2 = 0f
+
+    /** Health, used by set-piece fights. maxHealth of 0 hides the pips. */
+    var maxHealth = 0
+    var health = 0
+    /** Flashes red after a hit and grants a moment of mercy. */
+    var hurtFlash = 0f
+        private set
+    private var invulnerable = 0f
+
+    /** Whether the DODGE control is available in this chapter. */
+    var dodgeUnlocked = false
     var completed = false
         private set
 
@@ -93,9 +119,11 @@ class GameSession(
     var focusLabel: String = ""
         private set
 
-    private val solidScratch = ArrayList<Box>(64)
+    val solidScratch = ArrayList<Box>(64)
     private var exitCooldown = 0f
     private var blockedTime = 0f
+    /** Set by the script when the return vent's floor gives way. */
+    var ventFloorBroken = false
 
     /**
      * Set while the player is being stopped by something they could fit under
@@ -105,7 +133,6 @@ class GameSession(
      */
     var crouchHint = false
         private set
-    private var ventFloorBroken = false
     private var pendingRespawn = false
     private var repairQueued = false
 
@@ -117,8 +144,8 @@ class GameSession(
 
     /** Rebuilds the world from scratch at [targetStage]'s checkpoint. */
     fun restart(targetStage: Int) {
-        val checkpoint = Stage.checkpointFor(targetStage)
-        level = Chapter1.build()
+        val checkpoint = script.checkpointFor(targetStage)
+        level = script.build()
         stage = checkpoint
         hasKeyPack = false
         keyPackRepaired = false
@@ -127,6 +154,7 @@ class GameSession(
         circuitAssembled = false
         shards = 0
         carriedCable = null
+        carriedCube = null
         ventFloorBroken = false
         pendingRespawn = false
         repairQueued = false
@@ -137,6 +165,11 @@ class GameSession(
         chaseTime = 0f
         deathFlash = 0f
         endingProgress = 0f
+        endingProgressCh2 = 0f
+        hurtFlash = 0f
+        invulnerable = 0f
+        maxHealth = 0
+        health = 0
         completed = false
         lines.clear()
         currentLine = null
@@ -149,27 +182,25 @@ class GameSession(
         player.speedScale = 1f
         monster.mode = Monster.Mode.HIDDEN
         monster.scale = 1f
+        particles.clear()
 
-        Chapter1.applyStage(this, checkpoint)
+        script.applyStage(this, checkpoint)
 
-        val (roomId, sx, sy) = Chapter1.spawnFor(checkpoint)
+        val (roomId, sx, sy) = script.spawnFor(checkpoint)
         room = level.room(roomId)
         player.teleport(sx, sy)
         camera.follow(player.x, player.y - 1f, room.bounds, 0f, snap = true)
         fade = 1f
         fadeTarget = 0f
 
-        if (checkpoint == Stage.INTRO) startIntro()
-        else if (checkpoint == Stage.ELEVATOR_DENIED) {
-            say("Back at the lift. It still doesn't know this floor exists.", blocking = false)
-        }
+        script.onStart(this, checkpoint)
     }
 
     fun setStage(next: Int) {
         if (next <= stage) return
         stage = next
         onStageChanged?.invoke(stage)
-        if (stage >= Stage.COMPLETE && !completed) {
+        if (stage >= script.completeStage && !completed) {
             completed = true
             onChapterComplete?.invoke()
         }
@@ -184,6 +215,38 @@ class GameSession(
         lines.addLast(Line(text, blocking, hold))
     }
 
+    /** Starts a cutscene: freezes the player and resets the beat clock. */
+    fun beginCut(next: Cut) {
+        cut = next
+        cutTime = 0f
+        player.controlEnabled = false
+    }
+
+    /** Moves to the next beat of a running cutscene. */
+    fun setCut(next: Cut) {
+        cut = next
+        cutTime = 0f
+    }
+
+    fun endCut() {
+        cut = Cut.NONE
+        cutTime = 0f
+        player.controlEnabled = true
+    }
+
+    /** Teleports between rooms outside the normal exit flow, for cutscenes. */
+    fun moveTo(roomId: String, x: Float, y: Float) {
+        val next = level.rooms[roomId] ?: return
+        room = next
+        player.teleport(x, y)
+        camera.follow(x, y - 1.1f, room.bounds, 0f, snap = true)
+    }
+
+    fun holdExits(seconds: Float) { exitCooldown = seconds }
+
+    /** Opens the key pack repair once the current monologue has finished. */
+    fun queueRepairPuzzle() { repairQueued = true }
+
     fun openOverlay(o: Overlay, onDone: (Boolean) -> Unit) {
         o.sfx = { id -> audio.play(id) }
         overlay = o
@@ -193,8 +256,18 @@ class GameSession(
 
     // ---- update ----------------------------------------------------------
 
-    fun update(dt: Float, moveX: Float, crouch: Boolean, jumpPressed: Boolean, interactPressed: Boolean) {
+    fun update(
+        dt: Float,
+        moveX: Float,
+        crouch: Boolean,
+        jumpPressed: Boolean,
+        interactPressed: Boolean,
+        dodgePressed: Boolean = false
+    ) {
         time += dt
+        if (hurtFlash > 0f) hurtFlash -= dt
+        if (invulnerable > 0f) invulnerable -= dt
+        if (dodgePressed && dodgeUnlocked) player.startDodge(moveX)
         fade = MathX.moveToward(fade, fadeTarget, dt * 1.6f)
 
         overlay?.let { o ->
@@ -232,12 +305,14 @@ class GameSession(
 
         for (p in room.props) p.update(this, dt)
         monster.update(dt)
+        particles.update(dt)
+        player.hasPack = hasKeyPack
 
         if (exitCooldown > 0f) exitCooldown -= dt
         updateCrouchHint(dt, moveX, crouch)
         updateInteraction(interactPressed)
         if (cut == Cut.NONE) checkExits()
-        updateStory()
+        updateStory(dt)
         updateChase(dt)
 
         // Keep the player inside the room even if geometry ever lets them slip.
@@ -371,168 +446,32 @@ class GameSession(
 
     // ---- story -----------------------------------------------------------
 
-    private fun startIntro() {
-        cut = Cut.INTRO
-        cutTime = 0f
-        player.controlEnabled = false
-        say("The intake door sealed behind me. Of course it did.")
-        say("Ren said he got trapped down here three days ago.")
-        say("He's the only thing I've got left. So I'm here.")
-        say("Nobody's answered a radio from this place in years.", hold = 0.4f)
-    }
+    private fun onRoomEntered(roomId: String) = script.onRoomEntered(this, roomId)
 
-    private fun onRoomEntered(roomId: String) {
-        when (roomId) {
-            "lobby" -> if (stage < Stage.LOBBY_PUZZLE) {
-                setStage(Stage.LOBBY_PUZZLE)
-                say("Intake hall. Dead as everything else.", blocking = false)
-            }
-            "sealed" -> if (stage < Stage.FIND_KEYPACK) {
-                setStage(Stage.FIND_KEYPACK)
-                say("There's the way down. Sealed, naturally.", blocking = false)
-            }
-            "storage" -> if (stage == Stage.FIND_KEYPACK) {
-                say("Storage. Somebody left in a hurry.", blocking = false)
-            }
-            "hub" -> if (stage < Stage.FETCH_BIG_WIRE) setStage(Stage.FETCH_BIG_WIRE)
-            "power" -> if (stage == Stage.FETCH_BIG_WIRE && carriedCable == null) {
-                say("The feeder's back the other way. I need to bring it here.", blocking = false)
-            }
-            "lift" -> {
-                if (stage == Stage.REACH_ELEVATOR) {
-                    setStage(Stage.ELEVATOR_DENIED)
-                    say("An elevator. Subfloor 1. That's got to be where he is.", blocking = false)
-                }
-            }
-            "archive" -> if (stage == Stage.ELEVATOR_DENIED) setStage(Stage.ENCOUNTER)
-            "vent" -> if (stage == Stage.VENT_CRAWL) {
-                say("Tight. Keep low and keep moving.", blocking = false)
-            }
-        }
-    }
-
-    private fun updateStory() {
-        when (stage) {
-            Stage.ENCOUNTER -> {
-                if (cut == Cut.NONE && room.id == "archive" && player.x >= Chapter1.ENCOUNTER_X) {
-                    beginEncounter()
-                }
-            }
-            Stage.VENT_CRAWL -> {
-                if (cut == Cut.NONE && room.id == "vent" && player.x >= Chapter1.VENT_SWIPE_X) {
-                    beginVentSwipe()
-                }
-            }
-        }
-    }
+    private fun updateStory(dt: Float) = script.update(this, dt)
 
     // ---- cutscenes -------------------------------------------------------
-
-    private fun beginEncounter() {
-        cut = Cut.ENCOUNTER
-        cutTime = 0f
-        player.controlEnabled = false
-        monster.mode = Monster.Mode.LURKING
-        // Reveal it exactly where the chase route begins, so the cut and the
-        // chase are continuous rather than snapping the figure across the room.
-        monster.place("archive", Chapter1.ENCOUNTER_X - 6f, 0f, 1)
-        camera.shake(0.18f, 0.6f)
-        audio.play(Sfx.Id.RUMBLE)
-        say("...that's not a machine.", blocking = false)
-    }
-
-    private fun beginVentSwipe() {
-        cut = Cut.VENT_SWIPE
-        cutTime = 0f
-        player.controlEnabled = false
-        monster.mode = Monster.Mode.VENT_SWIPE
-        monster.place("vent", player.x + 4.2f, 0f, -1)
-        audio.play(Sfx.Id.SCREAM, 0.8f)
-        camera.shake(0.25f, 0.9f)
-        onHaptic?.invoke(60)
-    }
 
     private fun updateCutscene(dt: Float) {
         if (cut == Cut.NONE) return
         cutTime += dt
+        // The chapter drives its own beats; only the two shared ones live here.
+        if (script.updateCut(this, dt)) return
         when (cut) {
-            Cut.INTRO -> {
-                // Hand control back as soon as the monologue is done.
-                if (lines.isEmpty() && currentLine == null) {
-                    cut = Cut.NONE
-                    player.controlEnabled = true
-                }
-            }
-            Cut.ENCOUNTER -> {
-                if (cutTime > 0.9f && monster.mode == Monster.Mode.LURKING) {
-                    monster.mode = Monster.Mode.ALERTED
-                    audio.play(Sfx.Id.SCREAM)
-                    camera.shake(0.3f, 0.8f)
-                    onHaptic?.invoke(80)
-                }
-                if (cutTime > 1.9f) {
-                    cut = Cut.NONE
-                    startChase()
-                }
-            }
-            Cut.VENT_SWIPE -> {
-                if (cutTime > 0.75f && !ventFloorBroken) {
-                    ventFloorBroken = true
-                    audio.play(Sfx.Id.THUD)
-                    camera.shake(0.35f, 0.7f)
-                }
-                if (cutTime > 1.15f) {
-                    cut = Cut.FALL
-                    cutTime = 0f
-                    monster.mode = Monster.Mode.HIDDEN
-                    // Drop into the lift landing through the duct in its ceiling.
-                    room = level.room("lift")
-                    player.teleport(16.4f, -8.2f)
-                    player.vy = 4.5f
-                    camera.follow(player.x, player.y, room.bounds, 0f, snap = true)
-                    exitCooldown = 0.6f
-                }
-            }
-            Cut.FALL -> {
-                if (player.onGround || cutTime > 2.2f) {
-                    camera.shake(0.22f, 0.5f)
-                    audio.play(Sfx.Id.THUD)
-                    onHaptic?.invoke(40)
-                    cut = Cut.PEER
-                    cutTime = 0f
-                    monster.mode = Monster.Mode.PEERING
-                    monster.place("lift", 16.4f, -8.2f, -1)
-                    setStage(Stage.AFTER_FALL)
-                    say("...ow. Okay. Okay.", blocking = false)
-                }
-            }
-            Cut.PEER -> {
-                if (cutTime > PEER_SECONDS) {
-                    monster.mode = Monster.Mode.HIDDEN
-                    cut = Cut.NONE
-                    player.controlEnabled = true
-                    setStage(Stage.ELEVATOR_READY)
-                    say("It just... watched. Then it left.", blocking = false)
-                }
-            }
             Cut.ENDING -> {
-                val before = endingProgress
                 endingProgress += dt / ENDING_SECONDS
-                if (before < LANDING_CUE && endingProgress >= LANDING_CUE) {
-                    audio.play(Sfx.Id.THUD)
-                    audio.play(Sfx.Id.SCREAM)
-                    onHaptic?.invoke(160)
-                }
                 if (endingProgress >= 1f) {
                     endingProgress = 1f
-                    setStage(Stage.COMPLETE)
+                    setStage(script.completeStage)
                 }
             }
             Cut.DEATH -> {
                 deathFlash = (1f - cutTime / DEATH_SECONDS).coerceIn(0f, 1f)
                 if (cutTime > DEATH_SECONDS) {
                     cut = Cut.NONE
-                    restart(Stage.checkpointFor(stage))
+                    val target = if (retryStageOverride >= 0) retryStageOverride else stage
+                    retryStageOverride = -1
+                    restart(script.checkpointFor(target))
                 }
             }
             else -> {}
@@ -541,40 +480,84 @@ class GameSession(
 
     // ---- chase -----------------------------------------------------------
 
-    private fun startChase() {
-        setStage(Stage.CHASE)
+    /**
+     * A hit from a set-piece attacker. Costs health, knocks the player back, and
+     * kills once there is none left. A short mercy window follows so a single
+     * swing cannot take two.
+     */
+    fun takeHit(fromFacing: Int, retryStage: Int) {
+        if (invulnerable > 0f || cut != Cut.NONE) return
+        invulnerable = HIT_MERCY
+        hurtFlash = 0.45f
+        camera.shake(0.4f, 0.5f)
+        audio.play(Sfx.Id.THUD)
+        onHaptic?.invoke(90)
+        particles.sparkBurst(player.x, player.y - player.height * 0.5f, 16, 1.6f, 5f, Palette.BAD)
+        player.vx = fromFacing * 7.5f
+        player.vy = -3.5f
+        health--
+        if (health <= 0) {
+            retryStageOverride = retryStage
+            die()
+        } else {
+            say("Agh —", blocking = false, hold = 0.2f)
+        }
+    }
+
+    /** Kills the player outright; used by timers the chapter owns. */
+    fun killPlayer() = die()
+
+    /** Ends a pursuit without the player having earned it. */
+    fun stopChase() {
+        if (stage == chaseStageValue) {
+            monster.mode = Monster.Mode.HIDDEN
+            player.speedScale = 1f
+        }
+    }
+
+    /** Set when a set-piece wants death to retry somewhere specific. */
+    private var retryStageOverride = -1
+
+    /** Begins a timed pursuit; [chaseStage] is the chapter's own chase stage. */
+    fun startChase(chaseStage: Int) {
+        setStage(chaseStage)
+        chaseStageValue = chaseStage
         chaseTime = 0f
         monster.mode = Monster.Mode.CHASING
         monster.resetChase()
         player.speedScale = CHASE_SPEED_BOOST
-        say("RUN.", blocking = false, hold = 0.6f)
     }
 
+    /** The stage value that means "being chased" in the running chapter. */
+    var chaseStageValue = Stage.CHASE
+        private set
+
     private fun updateChase(dt: Float) {
-        if (stage != Stage.CHASE || cut != Cut.NONE) return
+        if (stage != chaseStageValue || cut != Cut.NONE) return
         chaseTime += dt
         // The clock is the deadline, but the pursuit is anchored to the player:
-        // a purely time-driven monster on a 30 second budget crawls along at
-        // under 2 m/s and is never seen, which is not a chase.
-        val timeProgress = chaseTime / Chapter1.CHASE_SECONDS
+        // a purely time-driven monster on a long budget crawls along at under
+        // 2 m/s and is never seen, which is not a chase.
+        val timeProgress = chaseTime / script.chaseSeconds
         val playerProgress = monster.progressAt(room.id, player.x)
         val lead = MathX.lerp(CHASE_LEAD_START, CHASE_LEAD_END, timeProgress) / monster.routeLength
         val anchored = if (playerProgress != null) playerProgress - lead else 0f
         monster.setChaseProgress(kotlin.math.max(timeProgress, anchored))
-        camera.shake(0.03f + 0.05f * (chaseTime / Chapter1.CHASE_SECONDS), 0.1f)
+        camera.shake(0.03f + 0.05f * (chaseTime / script.chaseSeconds), 0.1f)
         if (monster.wantsScream()) audio.play(Sfx.Id.SCREAM, 0.55f)
 
-        val caught = chaseTime >= Chapter1.CHASE_SECONDS ||
+        val caught = chaseTime >= script.chaseSeconds ||
             (monster.roomId == room.id && monster.touching(player))
         if (caught) die()
     }
 
-    private fun survivedChase() {
-        setStage(Stage.CHASE_SURVIVED)
+    /** Ends a pursuit and drops the named shutter behind the player. */
+    fun survivedChase(survivedStage: Int, shutterName: String) {
+        setStage(survivedStage)
         player.speedScale = 1f
         monster.mode = Monster.Mode.HIDDEN
-        (level.room("endchase").props.firstOrNull { it is Door && it.name == "shutter" } as? Door)?.let {
-            it.forceClose()
+        for (r in level.rooms.values) {
+            (r.props.firstOrNull { it is Door && it.name == shutterName } as? Door)?.forceClose()
         }
         audio.play(Sfx.Id.RUMBLE)
         camera.shake(0.3f, 0.8f)
@@ -597,6 +580,9 @@ class GameSession(
     }
 
     // ---- prop callbacks --------------------------------------------------
+    //
+    // Each of these does the part every chapter shares — sound, particles, the
+    // flag on the session — and hands the story decision to the script.
 
     fun onBreakersSolved(gateId: String) {
         val gate = room.props.firstOrNull { it is Door && it.name == gateId } as? Door
@@ -604,17 +590,14 @@ class GameSession(
         gate?.forceOpen()
         audio.play(Sfx.Id.POWER)
         camera.shake(0.12f, 0.5f)
-        say("Intake's live. The gate's open.", blocking = false)
+        particles.sparkBurst(gate?.box?.cx ?: player.x, gate?.box?.b ?: player.y, 14, 1.2f, 5f)
+        script.onBreakersSolved(this, gateId)
     }
 
     fun onKeyPackTaken() {
         hasKeyPack = true
         audio.play(Sfx.Id.PICKUP)
-        setStage(Stage.REPAIR_KEYPACK)
-        say("A key pack. This opens everything in here.")
-        say("Or it would, if its loom weren't torn to pieces.")
-        // Let the monologue finish before the puzzle covers the screen.
-        repairQueued = true
+        script.onKeyPackTaken(this)
     }
 
     /** Also reachable from the HUD icon, so a closed puzzle is never a dead end. */
@@ -623,7 +606,7 @@ class GameSession(
         openOverlay(WiringPuzzle(puzzleSeed + 17)) { ok ->
             if (ok) {
                 keyPackRepaired = true
-                setStage(Stage.UNLOCK_FIRST_DOOR)
+                if (stage < Stage.UNLOCK_FIRST_DOOR && chapterNumber == 1) setStage(Stage.UNLOCK_FIRST_DOOR)
                 audio.play(Sfx.Id.POWER, 0.6f)
                 say("There. It's reading again.", blocking = false)
             }
@@ -636,10 +619,7 @@ class GameSession(
         cable.held = true
         player.carrying = true
         audio.play(Sfx.Id.PICKUP)
-        if (stage == Stage.FETCH_BIG_WIRE) {
-            setStage(Stage.POWER_SUBFLOOR)
-            say("Heavy. Feeder line. It has to reach the vault.", blocking = false)
-        }
+        script.onCableGrabbed(this, cable)
     }
 
     fun onCableThrown(station: ConnectionStation) {
@@ -651,98 +631,68 @@ class GameSession(
         audio.play(Sfx.Id.CONNECT)
         // Surviving is credited on the throw, not on the animation finishing:
         // the player earned it the moment the cable left their hands.
-        if (stage == Stage.CHASE && station.id == "st_chase") survivedChase()
+        script.onCableThrown(this, station)
     }
 
     fun onStationConnected(station: ConnectionStation) {
         audio.play(Sfx.Id.POWER)
         camera.shake(0.15f, 0.6f)
-        when (station.id) {
-            "st_main" -> {
-                subfloorPowered = true
-                setStage(Stage.REACH_ELEVATOR)
-                say("Subfloor zero is live.")
-                say("Now the pack can talk to the locks down here.", blocking = false)
-            }
-            "st_chase" -> { /* handled on throw */ }
-            "st_c1", "st_c2" -> say("Feed's seated. There's a data shard in the return.", blocking = false)
-        }
+        particles.sparkBurst(station.box.cx, station.box.b, 26, 1.1f, 7f)
+        particles.embers(station.box.cx, station.box.b, 6)
+        script.onStationConnected(this, station)
     }
 
     fun onShardTaken() {
         shards++
         audio.play(Sfx.Id.PICKUP)
-        if (shards >= 2) {
-            circuitAssembled = true
-            setStage(Stage.CIRCUIT_ASSEMBLED)
-            audio.play(Sfx.Id.CHIME)
-            say("Two halves. They lock together into one circuit.")
-            say("The archive panel will take this.", blocking = false)
-        } else {
-            say("One shard. There's another feed on the far side.", blocking = false)
-        }
+        script.onShardTaken(this)
     }
 
     fun onUploadStarted() {
         audio.play(Sfx.Id.CHIME)
-        say("Writing the lift into the pack. Come on...", blocking = false)
+        script.onUploadStarted(this)
     }
 
     fun onUploadFinished() {
         audio.play(Sfx.Id.CONFIRM)
         camera.shake(0.1f, 0.4f)
-        setStage(Stage.PANEL_UPLOADED)
+        script.onUploadFinished(this)
     }
 
     fun onPackRetrieved() {
-        keyPackHasElevator = true
         audio.play(Sfx.Id.PICKUP)
-        setStage(Stage.VENT_CRAWL)
-        say("Got it. Subfloor 1 is in the database now.")
-        say("The vent goes back to the lift. Faster than the long way.", blocking = false)
+        script.onPackRetrieved(this)
     }
 
-    fun onElevatorUse(elevator: Elevator) {
-        if (!hasKeyPack || !keyPackRepaired) {
-            say("No pack, no lift.", blocking = false)
-            audio.play(Sfx.Id.DENY)
-            return
-        }
-        if (!keyPackHasElevator) {
-            audio.play(Sfx.Id.DENY)
-            say("What — it's not in the database?")
-            say("I guess I have to add it myself.")
-            say("There has to be an archive on this floor.", blocking = false)
-            return
-        }
-        elevator.doorsOpen = true
+    fun onElevatorUse(elevator: Elevator) = script.onElevatorUse(this, elevator)
+
+    fun onElevatorBoard() = script.onElevatorBoard(this)
+
+    fun onDoorOpened(door: Door) = script.onDoorOpened(this, door)
+
+    fun onCubeTaken(cube: PowerCube) {
+        carriedCube = cube
+        audio.play(Sfx.Id.PICKUP)
+        script.onCubeTaken(this, cube)
+    }
+
+    fun onCubeInserted(socket: CubeSocket) {
+        carriedCube = null
+        audio.play(Sfx.Id.CONFIRM)
+        camera.shake(0.12f, 0.5f)
+        particles.sparkBurst(socket.box.cx, socket.box.cy, 18, 1.4f, 5f, Palette.ACCENT)
+        script.onCubeInserted(this, socket)
+    }
+
+    fun onSwitchUsed(sw: KeySwitch) {
         audio.play(Sfx.Id.UNLOCK)
-        say("Subfloor 1. Accepted.", blocking = false)
+        script.onSwitchUsed(this, sw)
     }
 
-    fun onElevatorBoard() {
-        if (stage >= Stage.ENDING) return
-        setStage(Stage.ENDING)
-        cut = Cut.ENDING
-        cutTime = 0f
-        endingProgress = 0f
-        player.controlEnabled = false
-        player.visible = false
-        audio.play(Sfx.Id.RUMBLE)
-    }
-
-    fun onDoorOpened(door: Door) {
-        when (door.name) {
-            "door_main" -> if (stage < Stage.FETCH_BIG_WIRE) {
-                setStage(Stage.FETCH_BIG_WIRE)
-                say("Open. Subfloor zero.", blocking = false)
-            }
-            "door_power" -> if (stage < Stage.REACH_ELEVATOR) setStage(Stage.REACH_ELEVATOR)
-            "door_circuit" -> if (stage < Stage.CIRCUIT_ROOM) {
-                setStage(Stage.CIRCUIT_ROOM)
-                say("Data spine. Two dead feeds and a write panel.", blocking = false)
-            }
-        }
+    fun onTaskCompleted(task: LiftTask) {
+        audio.play(Sfx.Id.CONFIRM)
+        particles.sparkBurst(task.box.cx, task.box.cy, 12, 1.2f, 4f, Palette.GOOD)
+        script.onTaskCompleted(this, task)
     }
 
     // ---- rendering -------------------------------------------------------
@@ -776,8 +726,9 @@ class GameSession(
             else monster.draw(c, d, camera, time)
         }
 
-        player.draw(c, d, camera, time)
         carriedCable?.let { drawCarriedCable(c, d, it) }
+        player.draw(c, d, camera, time)
+        particles.draw(c, d, camera)
 
         sc.drawDust(c, d, camera, time, player.x, player.y - 1f, 0.35f + amb * 0.65f)
         drawLighting(c, d, widthPx, heightPx)
@@ -791,15 +742,30 @@ class GameSession(
     private fun drawSky(c: Canvas, d: Draw, w: Float, h: Float) {
         d.vGradient(
             c, 0f, 0f, w, h,
-            Palette.mix(Palette.mix(Palette.BG_FAR, Palette.VOID, 0.42f), Palette.ACCENT_DIM, 0.10f),
-            Palette.mix(Palette.mix(Palette.BG_FAR, Palette.BG_NEAR, 0.30f), Palette.ACCENT_DIM, 0.06f)
+            Palette.mix(Palette.mix(Palette.BG_FAR, Palette.VOID, 0.30f), Palette.ACCENT_DIM, 0.12f),
+            Palette.mix(Palette.mix(Palette.BG_FAR, Palette.BG_NEAR, 0.55f), Palette.ACCENT_DIM, 0.08f)
         )
+        // Overhead ambient: without it the plating, bolts and tread that the
+        // materials pass draws are all sitting in the dark doing nothing.
+        val roofY = camera.sy(room.bounds.t)
+        val floorY = camera.sy(room.bounds.b)
+        if (floorY > roofY) {
+            d.vGradient(
+                c, 0f, roofY, w, floorY,
+                Palette.withAlpha(Palette.TEXT, 0.055f + lightLift * 0.05f),
+                Palette.withAlpha(Palette.TEXT, 0f)
+            )
+        }
     }
+
+    /** Player brightness preference, 0 .. 1, applied on top of the room lighting. */
+    var lightLift = 0.5f
 
     private fun drawDecor(c: Canvas, d: Draw, dec: Decor) {
         if (!camera.isVisible(dec.box, 1.5f)) return
         val l = camera.sx(dec.box.l); val r = camera.sx(dec.box.r)
         val t = camera.sy(dec.box.t); val b = camera.sy(dec.box.b)
+        val detail = camera.scale
         when (dec.kind) {
             Decor.Kind.LIGHT -> {
                 val powered = dec.lit || subfloorPowered || !room.needsPower
@@ -809,35 +775,39 @@ class GameSession(
                 val tint = if (powered) dec.color else Palette.BAD
                 val flicker = if (powered) 0.78f + 0.22f * sin(time * 9.3f + dec.box.l)
                 else 0.30f + 0.16f * sin(time * 1.7f + dec.box.l)
-                d.surface(
-                    c, l, t, r, b,
-                    Palette.mix(Palette.WALL_LIT, tint, if (powered) 0.75f else 0.30f),
-                    Palette.mix(Palette.WALL, Palette.VOID, 0.3f),
-                    Palette.withAlpha(tint, flicker),
-                    MathX.min(camera.s(0.05f), 3f)
+                // Housing, then the tube itself glowing inside it.
+                Art.plate(
+                    c, d, l - detail * 0.06f, t - detail * 0.05f, r + detail * 0.06f, b,
+                    Palette.mix(Palette.WALL_LIT, Palette.TRIM, 0.5f),
+                    Palette.mix(Palette.WALL, Palette.VOID, 0.4f),
+                    Palette.mix(Palette.TRIM, Palette.TEXT_DIM, 0.4f),
+                    detail, dec.box.l, bolts = true
                 )
-                d.glow(c, (l + r) * 0.5f, b, camera.s(if (powered) 2.0f else 1.1f), tint, 0.72f * flicker)
-                d.circle(c, (l + r) * 0.5f, b - camera.s(0.05f), camera.s(0.10f), Palette.withAlpha(tint, flicker))
+                d.round(c, l + detail * 0.05f, t + detail * 0.06f, r - detail * 0.05f, b - detail * 0.04f,
+                    detail * 0.04f, Palette.withAlpha(tint, 0.20f + flicker * 0.75f))
+                d.glow(c, (l + r) * 0.5f, b, camera.s(if (powered) 2.2f else 1.2f), tint, 0.75f * flicker)
+                d.circle(c, (l + r) * 0.5f, b - camera.s(0.05f), camera.s(0.09f), Palette.withAlpha(Palette.TEXT, flicker * 0.8f))
             }
             Decor.Kind.GRATE -> {
                 d.vGradient(c, l, t, r, b, Palette.mix(dec.color, Palette.WALL_LIT, 0.4f),
-                    Palette.mix(dec.color, Palette.VOID, 0.45f))
+                    Palette.mix(dec.color, Palette.VOID, 0.5f))
                 var x = l
                 val step = MathX.min(camera.s(0.16f), 24f)
                 while (x < r && step > 1.5f) {
-                    d.line(c, x, t, x, b, Palette.withAlpha(Palette.VOID, 0.55f), 2f)
+                    d.line(c, x, t, x, b, Palette.withAlpha(Palette.VOID, 0.6f), 2f)
+                    d.line(c, x + 1.5f, t, x + 1.5f, b, Palette.withAlpha(Palette.TRIM, 0.16f), 1.5f)
                     x += step
                 }
                 d.rect(c, l, t, r, t + 2f, Palette.withAlpha(Palette.TRIM, 0.5f))
             }
-            Decor.Kind.PIPE -> {
-                d.vGradient(c, l, t, r, b, Palette.mix(dec.color, Palette.TEXT_DIM, 0.35f),
-                    Palette.mix(dec.color, Palette.VOID, 0.5f))
-                d.rect(c, l, t, r, t + MathX.min(camera.s(0.05f), 3f), Palette.withAlpha(Palette.TEXT_DIM, 0.35f))
-            }
+            Decor.Kind.PIPE -> Art.pipe(c, d, l, t, r, b, dec.color, detail)
             Decor.Kind.STRIPE -> {
-                d.vGradient(c, l, t, r, b, Palette.mix(dec.color, Palette.TRIM, 0.35f),
-                    Palette.mix(dec.color, Palette.VOID, 0.4f))
+                if (dec.color == Palette.WARN || dec.color == Palette.BAD) {
+                    Art.hazardBand(c, d, l, t, r, b, dec.color)
+                } else {
+                    d.vGradient(c, l, t, r, b, Palette.mix(dec.color, Palette.TRIM, 0.35f),
+                        Palette.mix(dec.color, Palette.VOID, 0.45f))
+                }
             }
             else -> d.vGradient(c, l, t, r, b, dec.color, Palette.mix(dec.color, Palette.VOID, 0.4f))
         }
@@ -847,49 +817,44 @@ class GameSession(
         if (!camera.isVisible(s.box, 1.5f)) return
         val l = camera.sx(s.box.l); val r = camera.sx(s.box.r)
         val t = camera.sy(s.box.t); val b = camera.sy(s.box.b)
-        val lip = MathX.min(camera.s(0.07f), 5f)
+        val detail = camera.scale
         when (s.kind) {
             Solid.Kind.CRATE -> {
-                d.surface(
-                    c, l, t, r, b,
-                    Palette.mix(Palette.WALL_LIT, Palette.TRIM, 0.30f),
-                    Palette.mix(Palette.WALL, Palette.VOID, 0.45f),
-                    Palette.mix(Palette.TRIM, Palette.TEXT_DIM, 0.35f),
-                    lip, occlusionPx = camera.s(0.30f)
-                )
-                // Banding so a crate never reads as a plain block.
-                val band = t + (b - t) * 0.34f
-                d.rect(c, l + lip, band, r - lip, band + lip * 0.8f, Palette.withAlpha(Palette.VOID, 0.35f))
-                d.rect(c, l + lip, band + lip * 0.8f, r - lip, band + lip * 1.3f,
-                    Palette.withAlpha(Palette.TRIM, 0.25f))
+                Art.crate(c, d, l, t, r, b, detail, s.box.l)
+                Art.wear(c, d, l, t, r, b, detail, s.box.l + s.box.t, count = 5)
             }
             Solid.Kind.PLATFORM -> {
-                d.surface(
-                    c, l, t, r, b,
-                    Palette.mix(Palette.FLOOR_EDGE, Palette.TRIM, 0.45f),
-                    Palette.mix(Palette.FLOOR, Palette.VOID, 0.35f),
-                    Palette.mix(Palette.TRIM, Palette.ACCENT_DIM, 0.30f),
-                    lip
+                Art.plate(
+                    c, d, l, t, r, b,
+                    Palette.mix(Palette.FLOOR_EDGE, Palette.TRIM, 0.5f),
+                    Palette.mix(Palette.FLOOR, Palette.VOID, 0.4f),
+                    Palette.mix(Palette.TRIM, Palette.ACCENT_DIM, 0.35f),
+                    detail, s.box.l, bolts = false
                 )
                 // Under-lit edge so a thin ledge is obvious against a dark wall.
-                d.rect(c, l, b, r, b + lip * 0.7f, Palette.withAlpha(Palette.VOID, 0.5f))
+                d.rect(c, l, b, r, b + MathX.clamp(detail * 0.05f, 1.5f, 4f), Palette.withAlpha(Palette.VOID, 0.55f))
+                // Support brackets under the ledge.
+                if (detail > 30f && r - l > detail) {
+                    val bw = MathX.clamp(detail * 0.08f, 2f, 7f)
+                    d.poly(c, floatArrayOf(l + detail * 0.2f, b, l + detail * 0.2f + bw, b, l + detail * 0.2f, b + detail * 0.28f),
+                        Palette.withAlpha(Palette.TRIM, 0.45f))
+                    d.poly(c, floatArrayOf(r - detail * 0.2f, b, r - detail * 0.2f - bw, b, r - detail * 0.2f, b + detail * 0.28f),
+                        Palette.withAlpha(Palette.TRIM, 0.45f))
+                }
             }
             else -> {
-                d.surface(
-                    c, l, t, r, b,
-                    Palette.mix(Palette.WALL, Palette.WALL_LIT, 0.35f),
-                    Palette.mix(Palette.WALL, Palette.VOID, 0.55f),
-                    Palette.mix(Palette.WALL_LIT, Palette.TRIM, 0.30f),
-                    lip
-                )
-                // Panel seams across large structure.
-                val step = MathX.min(camera.s(1.6f), 220f)
-                if (step > 12f && (r - l) > step) {
-                    var x = l + step
-                    while (x < r) {
-                        d.line(c, x, t, x, b, Palette.withAlpha(Palette.VOID, 0.30f), 2f)
-                        x += step
-                    }
+                // Floors get tread; walls and ceilings get plating.
+                val isFloor = s.box.h <= 1.6f && s.box.w > s.box.h * 3f && s.box.t >= room.bounds.b - 0.2f
+                if (isFloor) Art.floor(c, d, l, t, r, b, detail)
+                else {
+                    Art.plate(
+                        c, d, l, t, r, b,
+                        Palette.mix(Palette.WALL, Palette.WALL_LIT, 0.40f),
+                        Palette.mix(Palette.WALL, Palette.VOID, 0.55f),
+                        Palette.mix(Palette.WALL_LIT, Palette.TRIM, 0.35f),
+                        detail, s.box.l, bolts = true
+                    )
+                    Art.wear(c, d, l, t, r, b, detail, s.box.l - s.box.t, count = 4)
                 }
             }
         }
@@ -927,14 +892,22 @@ class GameSession(
         }
     }
 
+    /**
+     * The heavy run paying out behind the player as they haul it: a real cable
+     * stretching from where it was anchored to the coil in their hands, sagging
+     * more the further they drag it.
+     */
     private fun drawCarriedCable(c: Canvas, d: Draw, cable: CableCoil) {
-        // Slack line from the player's shoulder to the coil in their hands.
-        val sx = camera.sx(player.x)
-        val sy = camera.sy(player.y - player.height * 0.75f)
+        val ax = camera.sx(cable.anchorX)
+        val ay = camera.sy(cable.anchorY)
         val cx = camera.sx(cable.box.cx)
         val cy = camera.sy(cable.box.cy)
-        d.line(c, sx, sy, cx, cy + camera.s(0.18f), Palette.withAlpha(Palette.VOID, 0.5f), camera.s(0.09f))
-        d.line(c, sx, sy, cx, cy + camera.s(0.18f), Palette.withAlpha(Palette.WARN, 0.8f), camera.s(0.06f))
+        val span = kotlin.math.hypot(cable.box.cx - cable.anchorX, cable.box.cy - cable.anchorY)
+        val sag = camera.s(0.35f + span * 0.10f)
+        Art.cable(c, d, ax, ay, cx, cy, sag, camera.s(0.13f))
+        // The anchor plate it is bolted to.
+        d.circle(c, ax, ay, camera.s(0.14f), Palette.mix(Palette.TRIM, Palette.VOID, 0.3f))
+        d.circle(c, ax, ay, camera.s(0.07f), Palette.withAlpha(Palette.WARN, 0.8f))
     }
 
     private fun drawPeering(c: Canvas, d: Draw) {
@@ -975,14 +948,15 @@ class GameSession(
             // Wide and soft. The old pool was so tight the room read as a black
             // screen, which made judging a jump impossible.
             d.darkness(
-                c, w, h, cx, cy, camera.s(10f),
-                Palette.mix(Palette.VOID, Palette.BG_NEAR, 0.30f), depth = 0.86f
+                c, w, h, cx, cy, camera.s(10f + lightLift * 4f),
+                Palette.mix(Palette.VOID, Palette.BG_NEAR, 0.30f),
+                depth = 0.90f - lightLift * 0.14f
             )
             // A soft carry-light around the figure so the metre in front of the
             // player — the metre they have to judge a jump from — is readable.
             d.glow(c, cx, cy, camera.s(5.0f), Palette.mix(Palette.ACCENT, Palette.TEXT, 0.45f), 0.34f)
         }
-        val chaseHeat = if (stage == Stage.CHASE) (chaseTime / Chapter1.CHASE_SECONDS).coerceIn(0f, 1f) else 0f
+        val chaseHeat = if (stage == chaseStageValue) (chaseTime / script.chaseSeconds).coerceIn(0f, 1f) else 0f
         d.vignette(
             c, w, h, 0.34f + chaseHeat * 0.34f,
             if (chaseHeat > 0f) Palette.mix(Palette.VOID, Palette.BAD, chaseHeat * 0.45f) else Palette.VOID
@@ -993,16 +967,17 @@ class GameSession(
         const val CHAR_SECONDS = 0.022f
         const val AUTO_HOLD = 1.9f
         const val PEER_SECONDS = 2.0f
-        const val ENDING_SECONDS = 7.5f
+        const val ENDING_SECONDS = 9.5f
         const val DEATH_SECONDS = 1.9f
         const val CHASE_SPEED_BOOST = 1.15f
         /** How long to be stopped by a low gap before the game says so. */
         const val HINT_DELAY = 0.35f
+        /** Mercy window after a hit lands. */
+        const val HIT_MERCY = 1.1f
         /** Metres the pursuer hangs back at the start of the chase... */
         const val CHASE_LEAD_START = 9f
         /** ...and at the end, by which point the clock has caught up anyway. */
         const val CHASE_LEAD_END = 1.5f
-        /** Progress at which the thing lands on the car's roof. */
-        const val LANDING_CUE = 0.60f
+
     }
 }

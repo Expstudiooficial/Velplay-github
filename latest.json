@@ -1,0 +1,26 @@
+{
+  "versionCode": 2,
+  "versionName": "2.0.0",
+  "title": "Chapter 2 \u2014 Subfloor 1",
+  "description": "Chapter 2 is in, and everything got a new coat of paint. The lift fight, the Playerr, the hoist escape and the smelter are all playable, and there is a DODGE roll to go with them. Chapter 1 was rebuilt with the same art.",
+  "changelog": [
+    "Chapter 2 \u2014 Subfloor 1: sixteen rooms, two hunts and a new monster",
+    "New DODGE roll \u2014 tuck and go, with invulnerability frames",
+    "Lift fight: repair three systems while it swings at you",
+    "The Playerr: red, violet and blue, and it takes doors off their hinges",
+    "Hoist escape, battery cubes, the charger cell and the smelter finale",
+    "Rebuilt art: plated metal, bolts, rust, weld seams, tread floors",
+    "Cables now visibly pay out and sag as you haul them",
+    "New Chapter 1 ending \u2014 it lands on the car and caves the roof in",
+    "In-game updater, and every build now installs over the last one",
+    "More settings: brightness, screen shake, effects, hints, left-handed"
+  ],
+  "sizeBytes": 2664029,
+  "sizeMb": 2.54,
+  "sha256": "c93f34ebde11942b04cc3af9a9c2deaacb4299f53dee02038cbb3fd1bf42dade",
+  "releasedAt": "2026-09-12",
+  "minAndroid": "7.0 (API 24)",
+  "apkUrl": "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/claude/facility-core-chapter-1-e0gx57/dist/facility-core.apk",
+  "latestUrl": "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/claude/facility-core-chapter-1-e0gx57/latest.json",
+  "notes": "Installs over any earlier build and keeps every world. Every release is signed with the same key, which lives in keystore/ in this repository."
+}

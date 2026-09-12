@@ -72,6 +72,41 @@ class Settings(private val prefs: SharedPreferences) {
     var chapter2Unlocked: Boolean
         get() = prefs.getBoolean("ch2Unlocked", false)
         set(v) { prefs.edit().putBoolean("ch2Unlocked", v).apply() }
+
+    /** Screen shake intensity, 0 (off) .. 1.5 (heavy). */
+    var shakeAmount: Float
+        get() = prefs.getFloat("shake", 1f).coerceIn(0f, 1.5f)
+        set(v) { prefs.edit().putFloat("shake", v.coerceIn(0f, 1.5f)).apply() }
+
+    /** Extra brightness lift applied to unlit rooms, 0 .. 1. */
+    var brightness: Float
+        get() = prefs.getFloat("brightness", 0.5f).coerceIn(0f, 1f)
+        set(v) { prefs.edit().putFloat("brightness", v.coerceIn(0f, 1f)).apply() }
+
+    /** Particles, dust and bloom. Turning it off buys frames on weak devices. */
+    var effectsEnabled: Boolean
+        get() = prefs.getBoolean("effects", true)
+        set(v) { prefs.edit().putBoolean("effects", v).apply() }
+
+    /** Shows the contextual hints (crawl prompts and the like). */
+    var hintsEnabled: Boolean
+        get() = prefs.getBoolean("hints", true)
+        set(v) { prefs.edit().putBoolean("hints", v).apply() }
+
+    /** Left-handed layout mirrors the stick and the action buttons. */
+    var leftHanded: Boolean
+        get() = prefs.getBoolean("leftHanded", false)
+        set(v) { prefs.edit().putBoolean("leftHanded", v).apply() }
+
+    /** Checks for a new build on launch. */
+    var autoCheckUpdates: Boolean
+        get() = prefs.getBoolean("autoUpdate", true)
+        set(v) { prefs.edit().putBoolean("autoUpdate", v).apply() }
+
+    /** Highest versionCode the player has been told about, so we nag once. */
+    var lastSeenUpdate: Int
+        get() = prefs.getInt("lastSeenUpdate", 0)
+        set(v) { prefs.edit().putInt("lastSeenUpdate", v).apply() }
 }
 
 /**

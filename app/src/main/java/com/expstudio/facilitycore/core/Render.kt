@@ -37,6 +37,9 @@ class Camera {
     /** Metres visible vertically. Tuned so a 2 m character reads clearly. */
     var verticalMetres = 11f
 
+    /** Player preference, 0 (off) .. 1.5 (heavy). */
+    var shakeScale = 1f
+
     fun resize(widthPx: Int, heightPx: Int) {
         if (widthPx <= 0 || heightPx <= 0) return
         scale = heightPx / verticalMetres
@@ -45,9 +48,11 @@ class Camera {
     }
 
     fun shake(magnitude: Float, duration: Float) {
+        val scaled = magnitude * shakeScale
+        if (scaled <= 0.0001f) return
         // Never let a weaker shake cut a stronger one short.
-        if (magnitude >= shakeMag || shakeTime <= 0f) {
-            shakeMag = magnitude
+        if (scaled >= shakeMag || shakeTime <= 0f) {
+            shakeMag = scaled
             shakeTime = duration
         }
     }
