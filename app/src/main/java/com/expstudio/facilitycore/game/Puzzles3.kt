@@ -108,6 +108,7 @@ class FlowPuzzle(
             while (t < turns) { masks[i] = rotate(masks[i]); t++ }
             i++
         }
+        recomputeFeed()
         if (isSolved()) {
             // Vanishingly unlikely, but a puzzle that opens solved is a bug the
             // player would read as the game skipping itself.
@@ -143,8 +144,12 @@ class FlowPuzzle(
         stack.addLast(i)
     }
 
+    /**
+     * Reads the last flood fill rather than running a new one: this is asked on
+     * every drawn frame, and re-flooding there allocated a deque per frame for
+     * an answer that cannot have changed since the last tap.
+     */
     private fun isSolved(): Boolean {
-        recomputeFeed()
         val out = idx(cols - 1, outletRow)
         return fed[out] && masks[out] and E != 0
     }

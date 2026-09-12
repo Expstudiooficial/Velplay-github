@@ -63,6 +63,12 @@ class Chapter3Script : ChapterScript() {
         boss2Swinging = false
         sprintTime = 0f
         sprintBudget = SPRINT_START
+        // The pit's own progress. Without this a death at the pit came back with
+        // the crossing already recorded, and the crate check could fire against
+        // a crate that had been rebuilt back at its starting position.
+        pitCrossed = false
+        pitBlocked = false
+        pitArrival = 0f
         archiveRng = Compose.Rng(0x11CE + stage.toLong())
 
         // The coolant terminal is inert until its three valves are open.
@@ -375,9 +381,7 @@ class Chapter3Script : ChapterScript() {
         if (g.cut != Cut.NONE || g.room.id != "vent3") return
         ventTime += dt
         // Nothing is drawn behind you. Nothing has to be.
-        if (ventTime > Chapter3.VENT_SECONDS * 0.45f && g.room.id == "vent3") {
-            g.addTension(dt * 0.6f)
-        }
+        if (ventTime > Chapter3.VENT_SECONDS * 0.45f) g.addTension(dt * 0.6f)
         if (ventTime >= Chapter3.VENT_SECONDS) g.killPlayer()
     }
 
