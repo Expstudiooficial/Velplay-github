@@ -213,7 +213,7 @@ class Reach {
             // means walking past it, which would then rule the crate out.
             val moving = abs(g.player.vx) > 0.6f
             val score = dist + if (behind && moving) BEHIND_PENALTY else 0f
-            if (score < bestScore && clear(g, ox, oy, p.gripX(), p.gripY(), p)) {
+            if (score < bestScore && clear(g, ox, oy, p.gripX(), p.gripY(), p, groundUnder(g))) {
                 best = p
                 bestScore = score
             }
@@ -235,7 +235,9 @@ class Reach {
         x2: Float,
         y2: Float,
         /** The anchor being aimed at. Its own body never blocks the shot. */
-        target: ReachAnchor? = null
+        target: ReachAnchor? = null,
+        /** Whatever the player is standing on. You can reach over its edge. */
+        ground: Box? = null
     ): Boolean {
         val own = target?.solid
         val steps = 12
@@ -246,6 +248,7 @@ class Reach {
             val py = MathX.lerp(y1, y2, t)
             for (s in g.solidScratch) {
                 if (own != null && s === own) continue
+                if (ground != null && s === ground) continue
                 // A hair of slack: anchors are mounted flush to the things they
                 // hang off, so an exact test would reject every one of them.
                 if (s.inflated(-0.12f).contains(px, py)) return false
@@ -253,6 +256,21 @@ class Reach {
             i++
         }
         return true
+    }
+
+    /**
+     * The solid directly under the player's feet, if any. It is excluded from
+     * the line of sight: standing on a ledge and reaching down past its lip is
+     * an obvious thing to do, and the lip was refusing every such grab.
+     */
+    private fun groundUnder(g: GameSession): Box? {
+        val feet = g.player.y
+        val x = g.player.x
+        for (s in g.solidScratch) {
+            if (x < s.l - 0.4f || x > s.r + 0.4f) continue
+            if (s.t in (feet - 0.12f)..(feet + 0.35f)) return s
+        }
+        return null
     }
 
     fun fire(g: GameSession): Boolean {
@@ -313,7 +331,9 @@ class Reach {
                 g.addTension(dt * 0.3f)
                 if (a.kind == ReachAnchor.Kind.CRATE) haulCrate(g, a, dt)
                 if (work >= a.pullSeconds) {
-                    a.spent = true
+                    // A crate is not used up by being moved — it can be hauled
+                    // again, and the pit beat needs several pulls to finish.
+                    if (a.kind != ReachAnchor.Kind.CRATE) a.spent = true
                     a.strain = 1f
                     g.playSound(if (a.kind == ReachAnchor.Kind.LEVER) Sfx.Id.CONFIRM else Sfx.Id.IMPACT, 0.9f)
                     g.camera.shake(if (a.kind == ReachAnchor.Kind.RIP) 0.55f else 0.25f, 0.35f)
@@ -371,11 +391,10 @@ class Reach {
      */
     private fun haulCrate(g: GameSession, a: ReachAnchor, dt: Float) {
         if (a !is HeavyCrate) return
-        val feet = g.player.y
         val targetX = g.player.x + g.player.facing * 1.1f
         val dx = targetX - (a.box.l + a.box.r) * 0.5f
         val step = MathX.clamp(dx, -CRATE_SPEED * dt, CRATE_SPEED * dt)
-        a.shift(step, feet)
+        a.shift(step)
         anchorX = a.gripX()
         anchorY = a.gripY()
         if (abs(dx) < 0.12f) work = a.pullSeconds
@@ -472,17 +491,15 @@ class HeavyCrate(box: Box, id: String) : ReachAnchor(box, id, Kind.CRATE) {
 
     override val solid: Box? get() = box
 
-    /** Hauls the crate horizontally and drops it so its base rests at [feetY]. */
-    fun shift(dx: Float, feetY: Float) {
+    /**
+     * Drags the crate along the floor it is already on.
+     *
+     * Deliberately horizontal only. Seating it at the player's feet instead
+     * left it hanging in mid-air whenever the haul was made from a ledge — and
+     * then out of reach behind the ledge that put it there.
+     */
+    fun shift(dx: Float) {
         bx += dx
-        by = feetY - h
-        box.set(bx, by, bx + w, by + h)
-    }
-
-    /** Lets the story park it somewhere exact. */
-    fun placeAt(x: Float, feetY: Float) {
-        bx = x
-        by = feetY - h
         box.set(bx, by, bx + w, by + h)
     }
 

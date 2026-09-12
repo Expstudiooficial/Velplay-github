@@ -479,16 +479,18 @@ object Chapter3 {
         solid(-1f, -13f, 36f, 1f)                 // ceiling
         solid(-1f, -12f, 1f, 12f)                 // left wall
         solid(34f, -12f, 1f, 12f)                 // right wall
-        solid(-1f, 0f, 13.5f, 1f)                 // floor, near side
+        solid(-1f, 0f, 16.5f, 1f)                 // floor, near side
         solid(22.0f, 0f, 13f, 1f)                 // floor, far side
         decorBox(0f, -0.5f, 34f, 0.5f, Palette.WALL_LIT, Decor.Kind.STRIPE)
 
-        // The floor stops at 12.5 and resumes at 22. Nothing jumps that.
-        props.add(CoreWell(Box.of(12.5f, -0.2f, 9.5f, 11.6f)).also { it.charge = 1f })
-        decorBox(11.8f, -0.9f, 0.7f, 0.9f, Palette.WARN, Decor.Kind.STRIPE)
+        // The floor stops at 15.5 and resumes at 22. Nothing jumps that — and
+        // the bar has to sit inside the hand's range of the near lip, or a
+        // checkpoint here is a room with no way out of it.
+        props.add(CoreWell(Box.of(15.5f, -0.2f, 6.5f, 11.6f)).also { it.charge = 1f })
+        decorBox(14.8f, -0.9f, 0.7f, 0.9f, Palette.WARN, Decor.Kind.STRIPE)
         decorBox(21.9f, -0.9f, 0.7f, 0.9f, Palette.WARN, Decor.Kind.STRIPE)
 
-        props.add(ReachAnchor(Box.of(22.4f, -4.0f, 3.2f, 0.28f), "bar_pit", ReachAnchor.Kind.BAR))
+        props.add(ReachAnchor(Box.of(20.3f, -4.0f, 4.0f, 0.28f), "bar_pit", ReachAnchor.Kind.BAR))
         solid(22.2f, -3.8f, 4.0f, 0.4f, Solid.Kind.PLATFORM)
 
         // Clear floor between the landing platform and the crate. A step crate

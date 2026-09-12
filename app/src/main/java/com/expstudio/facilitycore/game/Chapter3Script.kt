@@ -567,6 +567,9 @@ class Chapter3Script : ChapterScript() {
 
     private fun updatePit(g: GameSession, dt: Float) {
         if (g.cut != Cut.NONE) return
+        // The hole is a core, not a gap. Without this the session simply lifts
+        // the player back to floor level and they drift across it falling.
+        if (g.player.y > 1.2f) { g.killPlayer(); return }
         if (!pitCrossed && g.player.x > 22f) {
             pitCrossed = true
             g.say("Across.", blocking = false)
