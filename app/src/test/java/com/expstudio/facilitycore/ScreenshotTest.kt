@@ -47,6 +47,33 @@ class ScreenshotTest {
         println("wrote build/screenshots/$name.png")
     }
 
+    /** Chapter 3: the rooms that carry the chapter's look and its mechanic. */
+    @Test
+    fun captureChapter3Frames() {
+        shoot("ch3_archive", com.expstudio.facilitycore.game.Stage3.ARCHIVE, chapter = 3, settle = 1.2f) { g ->
+            g.enterRoomForTest("archive3", 12f, -4f)
+        }
+        shoot("ch3_span", com.expstudio.facilitycore.game.Stage3.SHAFT, chapter = 3, settle = 0.9f) { g ->
+            g.reach.unlocked = true
+            g.enterRoomForTest("deepspan", 8f, -1.9f)
+        }
+        // The hand mid-stretch, which is the chapter's whole silhouette.
+        shoot("ch3_reach", com.expstudio.facilitycore.game.Stage3.SHAFT, chapter = 3, settle = 0.25f) { g ->
+            g.reach.unlocked = true
+            g.enterRoomForTest("shaft3", 4.5f, -3.4f)
+            g.update(1f / 60f, 0f, false, false, false, false, true, true)
+        }
+        shoot("ch3_core", com.expstudio.facilitycore.game.Stage3.CORE_LIT, chapter = 3, settle = 1.0f) { g ->
+            g.enterRoomForTest("core3", 20f, 0f)
+        }
+        shoot("ch3_pit", com.expstudio.facilitycore.game.Stage3.PIT, chapter = 3, settle = 0.9f) { g ->
+            g.enterRoomForTest("pit3", 11f, 0f)
+        }
+        shoot("ch3_boiler", com.expstudio.facilitycore.game.Stage3.DEEP, chapter = 3, settle = 0.9f) { g ->
+            g.enterRoomForTest("e13", 12f, 0f)
+        }
+    }
+
     /** Frames from the closing scene, which has no GameSession behind it. */
     @Test
     fun captureEndingFrames() {
