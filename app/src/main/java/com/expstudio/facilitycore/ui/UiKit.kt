@@ -51,6 +51,11 @@ object UiKit {
             setStroke(dp(context, strokeDp), strokeColor)
         }
 
+    /**
+     * A pressed-steel button: dark fill, a lit edge, and a hairline of the
+     * accent across the top so it reads as part of the facility rather than a
+     * stock Android control.
+     */
     fun button(context: Context, label: String, tint: Int = Palette.ACCENT, onClick: () -> Unit): Button =
         Button(context).apply {
             text = label
@@ -58,11 +63,44 @@ object UiKit {
             setTextColor(Palette.TEXT)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
-            background = rounded(Palette.withAlpha(tint, 0.14f), Palette.withAlpha(tint, 0.7f), 14f, context)
-            setPadding(dp(context, 20f), dp(context, 14f), dp(context, 20f), dp(context, 14f))
+            letterSpacing = 0.12f
+            background = plated(context, tint)
+            setPadding(dp(context, 22f), dp(context, 15f), dp(context, 22f), dp(context, 15f))
             stateListAnimator = null
             setOnClickListener { onClick() }
         }
+
+    /** Layered drawable: body, lit top edge, and a selectable highlight. */
+    fun plated(context: Context, tint: Int, radiusDp: Float = 12f): android.graphics.drawable.Drawable {
+        val body = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(context, radiusDp).toFloat()
+            colors = intArrayOf(
+                Palette.mix(Palette.WALL_LIT, tint, 0.16f),
+                Palette.mix(Palette.WALL, Palette.VOID, 0.35f)
+            )
+            orientation = GradientDrawable.Orientation.TOP_BOTTOM
+            setStroke(dp(context, 1.5f), Palette.withAlpha(tint, 0.75f))
+        }
+        val lip = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(context, radiusDp).toFloat()
+            setColor(Palette.withAlpha(tint, 0.30f))
+        }
+        val layers = android.graphics.drawable.LayerDrawable(arrayOf(body, lip))
+        // The lip is a two-pixel sliver along the top of the body.
+        layers.setLayerInset(1, dp(context, 6f), 0, dp(context, 6f), dp(context, 44f))
+        val states = android.graphics.drawable.StateListDrawable()
+        val pressed = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(context, radiusDp).toFloat()
+            setColor(Palette.withAlpha(tint, 0.30f))
+            setStroke(dp(context, 2f), Palette.withAlpha(tint, 1f))
+        }
+        states.addState(intArrayOf(android.R.attr.state_pressed), pressed)
+        states.addState(intArrayOf(), layers)
+        return states
+    }
 
     fun smallButton(context: Context, label: String, tint: Int, onClick: () -> Unit): Button =
         button(context, label, tint, onClick).apply {
@@ -77,6 +115,9 @@ object UiKit {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             letterSpacing = 0.14f
+            // A cold bloom behind the lettering, like everything else that
+            // glows down here.
+            setShadowLayer(dp(context, 14f).toFloat(), 0f, 0f, Palette.withAlpha(Palette.ACCENT, 0.55f))
         }
 
     fun label(context: Context, text: String, sizeSp: Float = 13f, color: Int = Palette.TEXT_DIM): TextView =
@@ -86,11 +127,16 @@ object UiKit {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
         }
 
-    fun column(context: Context, gravity: Int = Gravity.CENTER_HORIZONTAL): LinearLayout =
+    /** [transparent] lets the animated backdrop show through. */
+    fun column(
+        context: Context,
+        gravity: Int = Gravity.CENTER_HORIZONTAL,
+        transparent: Boolean = false
+    ): LinearLayout =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             this.gravity = gravity
-            setBackgroundColor(Palette.VOID)
+            if (!transparent) setBackgroundColor(Palette.VOID)
         }
 
     fun row(context: Context): LinearLayout =

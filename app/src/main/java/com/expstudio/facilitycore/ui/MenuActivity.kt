@@ -33,12 +33,19 @@ class MenuActivity : AppCompatActivity() {
     private lateinit var store: WorldStore
     private var screen = Screen.MAIN
     private lateinit var container: FrameLayout
+    private var backdrop: MenuBackdropView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = WorldStore(this)
         container = FrameLayout(this).apply { setBackgroundColor(Palette.VOID) }
         setContentView(container)
+        // The backdrop lives for the whole activity; screens are laid over it.
+        backdrop = MenuBackdropView(this)
+        container.addView(
+            backdrop,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        )
         UiKit.goFullscreen(this)
         show(Screen.MAIN)
         if (store.settings.autoCheckUpdates) UpdateUi.check(this, store, quiet = true)
@@ -58,7 +65,8 @@ class MenuActivity : AppCompatActivity() {
 
     private fun show(next: Screen) {
         screen = next
-        container.removeAllViews()
+        // Keep the backdrop; only the screen on top of it changes.
+        while (container.childCount > 1) container.removeViewAt(1)
         val view = when (next) {
             Screen.MAIN -> buildMain()
             Screen.WORLDS -> buildWorlds()
@@ -73,10 +81,10 @@ class MenuActivity : AppCompatActivity() {
     // ---- main ------------------------------------------------------------
 
     private fun buildMain(): View {
-        val root = UiKit.column(this, Gravity.CENTER)
+        val root = UiKit.column(this, Gravity.CENTER, transparent = true)
         root.setPadding(UiKit.dp(this, 32f), UiKit.dp(this, 24f), UiKit.dp(this, 32f), UiKit.dp(this, 24f))
 
-        root.addView(UiKit.title(this, "FACILITY CORE", 40f))
+        root.addView(UiKit.title(this, "FACILITY CORE", 44f))
         root.addView(
             UiKit.label(this, "CHAPTER 1 — SUBFLOOR 0", 13f, Palette.ACCENT),
             UiKit.lp(this, marginDp = 6f)
@@ -105,7 +113,8 @@ class MenuActivity : AppCompatActivity() {
     // ---- worlds ----------------------------------------------------------
 
     private fun buildWorlds(): View {
-        val root = UiKit.column(this, Gravity.START)
+        val root = UiKit.column(this, Gravity.START, transparent = true)
+        root.setBackgroundColor(Palette.withAlpha(Palette.VOID, 0.72f))
         root.setPadding(UiKit.dp(this, 24f), UiKit.dp(this, 18f), UiKit.dp(this, 24f), UiKit.dp(this, 18f))
 
         val worlds = store.list()
@@ -148,10 +157,8 @@ class MenuActivity : AppCompatActivity() {
 
     private fun worldRow(world: WorldSave): View {
         val card = UiKit.column(this, Gravity.START)
-        card.background = UiKit.rounded(
-            Palette.withAlpha(Palette.PANEL_EDGE, 0.18f),
-            Palette.withAlpha(if (world.completed) Palette.GOOD else Palette.PANEL_EDGE, 0.7f),
-            14f, this
+        card.background = UiKit.plated(
+            this, if (world.completed) Palette.GOOD else Palette.PANEL_EDGE, 14f
         )
         card.setPadding(UiKit.dp(this, 14f), UiKit.dp(this, 12f), UiKit.dp(this, 14f), UiKit.dp(this, 12f))
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -305,7 +312,8 @@ class MenuActivity : AppCompatActivity() {
     // ---- settings --------------------------------------------------------
 
     private fun buildSettings(): View {
-        val root = UiKit.column(this, Gravity.START)
+        val root = UiKit.column(this, Gravity.START, transparent = true)
+        root.setBackgroundColor(Palette.withAlpha(Palette.VOID, 0.82f))
         root.setPadding(UiKit.dp(this, 24f), UiKit.dp(this, 18f), UiKit.dp(this, 24f), UiKit.dp(this, 18f))
 
         val header = UiKit.row(this)

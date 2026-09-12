@@ -77,6 +77,18 @@ class ScreenshotTest {
         }
     }
 
+    /** The menu's living backdrop, at two moments. */
+    @Test
+    fun captureMenuFrames() {
+        val backdrop = com.expstudio.facilitycore.ui.MenuBackdrop()
+        val out = File("build/screenshots").apply { mkdirs() }
+        for ((name, t) in listOf("menu_1" to 3.0f, "menu_2_watched" to 8.0f)) {
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            backdrop.draw(Canvas(bmp), w.toFloat(), h.toFloat(), t)
+            FileOutputStream(File(out, "$name.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+    }
+
     @Test
     fun captureFrames() {
         // The exact room from the bug report: unpowered, hauling-cable objective.
