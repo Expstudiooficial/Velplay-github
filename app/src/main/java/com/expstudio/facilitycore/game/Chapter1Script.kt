@@ -138,6 +138,10 @@ class Chapter1Script : ChapterScript() {
             }
             Cut.PEER -> {
                 if (g.cutTime > GameSession.PEER_SECONDS) {
+                    // It withdraws back up the duct. The line after this says it
+                    // left; it used to simply stop existing while being looked at.
+                    g.monster.y -= dt * PEER_WITHDRAW_SPEED
+                    if (g.camera.isVisible(g.monster.bounds(), 1.5f)) return true
                     g.monster.mode = Monster.Mode.HIDDEN
                     g.endCut()
                     g.setStage(Stage.ELEVATOR_READY)
@@ -250,5 +254,10 @@ class Chapter1Script : ChapterScript() {
                 g.say("Data spine. Two dead feeds and a write panel.", blocking = false)
             }
         }
+    }
+
+    private companion object {
+        /** Metres per second it pulls back up the duct before it is gone. */
+        const val PEER_WITHDRAW_SPEED = 6.5f
     }
 }

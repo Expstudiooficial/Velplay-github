@@ -35,6 +35,7 @@ class Chapter3Script : ChapterScript() {
 
     // The boss.
     private var bossTime = 0f
+    private var bossRetreat = false
     private var boss2Timer = 0f
     private var boss2Phase = 0f
     private var boss2Swinging = false
@@ -58,6 +59,7 @@ class Chapter3Script : ChapterScript() {
         swinging = false
         ventTime = 0f
         bossTime = 0f
+        bossRetreat = false
         boss2Timer = 0f
         boss2Phase = 0f
         boss2Swinging = false
@@ -221,7 +223,10 @@ class Chapter3Script : ChapterScript() {
             Stage3.JUKE -> if (g.room.id == "juke3") updateHunt(g, dt, Stage3.JUKE)
             Stage3.VENT_RUN -> updateVentRun(g, dt)
             Stage3.BOSS -> updateBoss(g, dt)
-            Stage3.FINAL_RUN -> updateSprint(g, dt)
+            Stage3.FINAL_RUN -> {
+                if (bossRetreat) retreatBoss(g, dt)
+                updateSprint(g, dt)
+            }
             Stage3.PIT -> updatePit(g, dt)
         }
     }
@@ -530,16 +535,33 @@ class Chapter3Script : ChapterScript() {
         if (bossTime >= Chapter3.BOSS_SECONDS) {
             g.setStage(Stage3.FINAL_RUN)
             g.maxHealth = 0
-            g.monster.mode = Monster.Mode.HIDDEN
-            g.monster2.mode = Monster.Mode.HIDDEN
             g.monster.swing = 0f
             g.monster2.swing = 0f
+            // They back off the way they came as the floor starts to go. Both
+            // used to blink out on screen, which is the one thing a monster
+            // must never do in front of the player.
+            bossRetreat = true
             (g.level.rooms["core3"]?.props?.firstOrNull { it is Door && it.name == "door_core" } as? Door)
                 ?.forceOpen()
             g.camera.shake(0.6f, 1.4f)
             g.playSound(Sfx.Id.RUMBLE, 1f)
             g.say("The well's taking the whole floor. GO.", blocking = false)
         }
+    }
+
+    /** Both of them off their own side of the gallery, then gone. */
+    private fun retreatBoss(g: GameSession, dt: Float) {
+        val bounds = g.room.bounds
+        var anyLeft = false
+        for (m in listOf(g.monster, g.monster2)) {
+            if (m.mode == Monster.Mode.HIDDEN) continue
+            m.mode = Monster.Mode.CHASING
+            val away = if (m.x < (bounds.l + bounds.r) * 0.5f) -1f else 1f
+            m.facing = if (away > 0f) 1 else -1
+            m.x += away * BOSS_RETREAT_SPEED * dt
+            if (!g.camera.isVisible(m.bounds(), 2f)) m.mode = Monster.Mode.HIDDEN else anyLeft = true
+        }
+        if (!anyLeft) bossRetreat = false
     }
 
     // ---- the evacuation ---------------------------------------------------
@@ -692,6 +714,8 @@ class Chapter3Script : ChapterScript() {
         /** How far a hunter can step up, and how far it will drop, in one go. */
         const val STEP_UP = 1.15f
         const val DROP_DOWN = 2.6f
+        /** How fast they clear the gallery once the floor starts to go. */
+        const val BOSS_RETREAT_SPEED = 8.5f
 
         const val SPRINT_START = 42f
         const val SPRINT_PER_VALVE = 9f

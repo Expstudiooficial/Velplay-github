@@ -556,15 +556,33 @@ class Sfx {
     }
 
     /** The jolt under a jump scare. */
+    /**
+     * The jumpscare hit.
+     *
+     * Two detuned 1.4 kHz saws falling together is a violin shriek — the single
+     * most worn-out sound in horror, and shrill enough on a phone speaker to be
+     * unpleasant rather than frightening. This is built around impact instead:
+     * a metal transient at the front, a sub that drops away under it, and a
+     * short inharmonic ring that is gone before it can grate.
+     */
     private fun stinger(): ShortArray {
-        val b = Synth.buffer(1.4f)
-        Synth.addTone(b, 0.5f, { t -> 1400f * (1f - 0.92f * t) }, { Synth.expDecay(it, 3.4f) }) { Synth.saw(it) }
-        Synth.addTone(b, 0.34f, { t -> 1409f * (1f - 0.92f * t) }, { Synth.expDecay(it, 3.2f) }) { Synth.saw(it) }
-        Synth.addTone(b, 0.42f, { 41f }, { Synth.expDecay(it, 3.8f) })
-        Synth.addNoise(b, 0.24f, 59) { Synth.expDecay(it, 12f) }
-        Synth.saturate(b, 2.8f)
-        Synth.room(b, 0.1f, 0.4f, 0.4f)
-        Synth.normalise(b, 0.98f)
+        val b = Synth.buffer(1.25f)
+
+        // The hit. Broadband, very short, filtered so it is metal and not a clap.
+        Synth.addNoise(b, 0.85f, 59) { Synth.expDecay(it, 46f) }
+        // Struck-metal partials: deliberately not a chord.
+        Synth.addTone(b, 0.30f, { 214f }, { Synth.expDecay(it, 9f) }) { Synth.saw(it) }
+        Synth.addTone(b, 0.20f, { 517f }, { Synth.expDecay(it, 11f) })
+        Synth.addTone(b, 0.13f, { 883f }, { Synth.expDecay(it, 14f) })
+        // The drop. This is the part that is felt rather than heard.
+        Synth.addTone(b, 0.62f, { t -> 78f * (1f - 0.62f * t) }, { Synth.expDecay(it, 2.6f) })
+        Synth.addTone(b, 0.30f, { t -> 39f * (1f - 0.62f * t) }, { Synth.expDecay(it, 2.2f) })
+
+        Synth.lowPass(b, { t -> 4200f - 3200f * t }, 0.4f)
+        Synth.highPass(b, 32f)
+        Synth.saturate(b, 3.0f)
+        Synth.room(b, 0.075f, 0.30f, 0.32f)
+        Synth.normalise(b, 0.95f)
         Synth.deClick(b)
         return Synth.toPcm(b)
     }

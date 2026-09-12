@@ -205,7 +205,6 @@ class Chapter2Script : ChapterScript() {
         if (tasks.isNotEmpty() && tasks.all { it.done } && g.stage == Stage2.LIFT_FIGHT) {
             g.setStage(Stage2.LIFT_FIXED)
             g.maxHealth = 0
-            monster.mode = Monster.Mode.HIDDEN
             monster.swing = 0f
             g.beginCut(Cut.CH2_FIGHT_INTRO)
             liftDescend = 0f
@@ -307,7 +306,15 @@ class Chapter2Script : ChapterScript() {
                 }
             }
             Cut.CH2_FIGHT_INTRO -> {
-                // The car drops the last few floors and the doors give way.
+                // The car drops the last few floors and the doors give way. The
+                // thing in it does not come along: it is left behind as the car
+                // falls, so it rises out of frame rather than being switched off
+                // in front of the player.
+                val m = g.monster
+                if (m.mode != Monster.Mode.HIDDEN) {
+                    m.y -= dt * CAR_DROP_SPEED
+                    if (!g.camera.isVisible(m.bounds(), 1.5f)) m.mode = Monster.Mode.HIDDEN
+                }
                 liftDescend += dt
                 g.camera.shake(0.12f, 0.2f)
                 if (liftDescend > 2.6f) {
@@ -553,6 +560,8 @@ class Chapter2Script : ChapterScript() {
          */
         const val HANG = 1.20f
         const val HOIST_PASS_SPEED = 7.5f
+        /** How fast the car falls away from whatever was standing in it. */
+        const val CAR_DROP_SPEED = 9.5f
         const val OPENING_SECONDS = 11f
         const val FINALE_SECONDS = 9f
     }

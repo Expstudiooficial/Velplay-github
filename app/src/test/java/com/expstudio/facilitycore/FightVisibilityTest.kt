@@ -1,6 +1,7 @@
 package com.expstudio.facilitycore
 
 import com.expstudio.facilitycore.game.Monster
+import com.expstudio.facilitycore.game.Stage
 import com.expstudio.facilitycore.game.Stage2
 import com.expstudio.facilitycore.game.Stage3
 import org.junit.Assert.assertTrue
@@ -72,6 +73,109 @@ class FightVisibilityTest {
         assertTrue("they are not in the player's room",
             g.monster.roomId == g.roomId() && g.monster2.roomId == g.roomId())
         assertTrue("they are the same thing twice", g.monster.kind != g.monster2.kind)
+    }
+
+    /**
+     * The general rule, applied to every beat that retires a hunter.
+     *
+     * A monster must never stop existing while the player is looking at it. It
+     * either leaves the frame first, or the frame leaves it — a full-screen
+     * cutscene. Anything else reads as the game forgetting about it.
+     */
+    @Test
+    fun noHunterIsEverSwitchedOffOnCamera() {
+        val offences = ArrayList<String>()
+
+        // Chapter 1: the thing that peers down the duct and then "leaves".
+        val ch1 = Bot.session(Stage.VENT_CRAWL, 1)
+        // Put him in the duct itself: the checkpoint for this stage is back at
+        // the archive, and walking there is a different test's job.
+        ch1.enterRoomForTest("vent", 2f, 0f)
+        ch1.setStage(Stage.VENT_CRAWL)
+        watchForPops("ch1 peer", ch1, 24f, offences) { g -> g.update(dt, 1f, true, false, false) }
+        assertTrue("the peer beat never played", ch1.stage >= Stage.ELEVATOR_READY)
+
+        // Chapter 2: the lift fight ending.
+        val ch2 = Bot.session(Stage2.LIFT_FIGHT, 2)
+        watchForPops("ch2 lift", ch2, 14f, offences) { g ->
+            for (task in g.level.room("car").props
+                .filterIsInstance<com.expstudio.facilitycore.game.LiftTask>()) task.done = true
+            g.update(dt, 0f, false, false, false)
+        }
+        assertTrue("the car never dropped", ch2.stage >= Stage2.LIFT_FIXED)
+
+        // Chapter 3: the last fight ending. Played rather than stood through —
+        // standing still simply dies, and a beat that never happens proves
+        // nothing at all.
+        val ch3 = Bot.session(Stage3.BOSS, 3)
+        watchForPops("ch3 boss", ch3, 60f, offences) { g -> dodgeBoth(g) }
+        assertTrue("the last fight never ended (stage=${ch3.stage})", ch3.stage >= Stage3.FINAL_RUN)
+
+        assertTrue("hunters switched off in plain sight:\n  " + offences.joinToString("\n  "), offences.isEmpty())
+    }
+
+    /**
+     * Steps a session and records any frame where a visible hunter becomes
+     * hidden while the world — rather than a full-screen scene — is on screen.
+     */
+    private fun watchForPops(
+        label: String,
+        g: com.expstudio.facilitycore.game.GameSession,
+        seconds: Float,
+        into: MutableList<String>,
+        step: (com.expstudio.facilitycore.game.GameSession) -> Unit
+    ) {
+        g.camera.resize(1920, 1080)
+        val wasVisible = HashMap<String, Boolean>()
+        var t = 0f
+        while (t < seconds) {
+            for ((name, m) in listOf("monster" to g.monster, "monster2" to g.monster2)) {
+                val onScreen = m.roomId == g.roomId() && g.camera.isVisible(m.bounds(), 0f)
+                val visible = m.mode != Monster.Mode.HIDDEN && onScreen
+                if (wasVisible[name] == true && !visible && onScreen && !fullScreenCut(g)) {
+                    into.add("$label: $name vanished on camera at x=%.1f".format(m.x))
+                }
+                wasVisible[name] = visible
+            }
+            if (g.dialogueBlocking) g.tapDialogue()
+            step(g)
+            t += dt
+        }
+    }
+
+    /** Cuts that replace the world with a scene of their own. */
+    private fun fullScreenCut(g: com.expstudio.facilitycore.game.GameSession): Boolean =
+        g.cut == com.expstudio.facilitycore.game.Cut.ENDING ||
+            g.cut == com.expstudio.facilitycore.game.Cut.CH2_OPENING ||
+            g.cut == com.expstudio.facilitycore.game.Cut.SMELTER_END ||
+            g.cut == com.expstudio.facilitycore.game.Cut.CH3_LAVA ||
+            g.cut == com.expstudio.facilitycore.game.Cut.CH3_ENDING ||
+            g.cut == com.expstudio.facilitycore.game.Cut.DEATH
+
+    /** Keeps to whichever floor is furthest from both, and rolls under swings. */
+    private fun dodgeBoth(g: com.expstudio.facilitycore.game.GameSession) {
+        if (g.cut != com.expstudio.facilitycore.game.Cut.NONE) {
+            g.update(dt, 0f, false, false, false)
+            return
+        }
+        val b = g.room.bounds
+        var bestX = g.player.x
+        var bestScore = -1f
+        var x = b.l + 2f
+        while (x < b.r - 2f) {
+            val score = minOf(kotlin.math.abs(x - g.monster.x), kotlin.math.abs(x - g.monster2.x))
+            if (score > bestScore) { bestScore = score; bestX = x }
+            x += 1f
+        }
+        val dir = when {
+            bestX > g.player.x + 1.2f -> 1f
+            bestX < g.player.x - 1.2f -> -1f
+            else -> 0f
+        }
+        val near = minOf(kotlin.math.abs(g.player.x - g.monster.x), kotlin.math.abs(g.player.x - g.monster2.x))
+        val roll = (g.monster.swing in 0.28f..0.40f || g.monster2.swing in 0.28f..0.40f) &&
+            g.player.dodgeReady && near < 4.5f
+        g.update(dt, dir, false, false, false, roll)
     }
 
     /**

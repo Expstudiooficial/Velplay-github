@@ -98,6 +98,25 @@ class MonsterVoiceTest {
         }
     }
 
+    /**
+     * The jumpscare hit is an impact, not a violin shriek.
+     *
+     * It used to be two detuned 1.4 kHz saws falling together — the most worn
+     * out sound in the genre, and shrill enough on a phone to be unpleasant
+     * rather than frightening.
+     */
+    @Test
+    fun theStingerHitsRatherThanShrieks() {
+        val b = samples(Sfx.Id.STINGER)
+        val rate = crossingRate(b)
+        assertTrue("the sting is a shriek again (%.0f Hz equivalent)".format(rate), rate < 450f)
+        val third = b.size / 3
+        assertTrue(
+            "the sting rings on instead of hitting",
+            rmsOf(b, third * 2, b.size) < rmsOf(b, 0, third) * 0.5f
+        )
+    }
+
     /** Repeats must not be identical, or the chase becomes a metronome. */
     @Test
     fun theRoarIsPitchedDifferentlyEachTime() {
