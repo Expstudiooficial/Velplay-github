@@ -211,6 +211,7 @@ class GameSession(
         overlayDone = null
         player.controlEnabled = true
         player.visible = true
+        player.shadow = true
         player.carrying = false
         player.speedScale = 1f
         monster.mode = Monster.Mode.HIDDEN
@@ -674,7 +675,7 @@ class GameSession(
         val anchored = if (playerProgress != null) playerProgress - lead else 0f
         monster.setChaseProgress(kotlin.math.max(timeProgress, anchored))
         camera.shake(0.03f + 0.05f * (chaseTime / script.chaseSeconds), 0.1f)
-        if (monster.wantsScream()) audio.play(Sfx.Id.SCREAM, 0.55f)
+        if (monster.wantsScream()) audio.playPitched(Sfx.Id.SCREAM, 0.5f, monster.screamPitch())
 
         val caught = chaseTime >= script.chaseSeconds ||
             (monster.roomId == room.id && monster.touching(player))

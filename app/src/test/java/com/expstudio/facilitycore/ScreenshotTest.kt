@@ -47,6 +47,37 @@ class ScreenshotTest {
         println("wrote build/screenshots/$name.png")
     }
 
+    /** The fights, with the monsters placed where the player would see them. */
+    @Test
+    fun captureFightFrames() {
+        shoot("ch3_fight_archive", com.expstudio.facilitycore.game.Stage3.ARCHIVE, chapter = 3, settle = 1.0f) { g ->
+            g.enterRoomForTest("archive3", 12f, 0f)
+            g.update(1f / 60f, 0f, false, false, false)
+            g.monster.place("archive3", 16f, 0f, -1)
+        }
+        shoot("ch3_fight_boss", com.expstudio.facilitycore.game.Stage3.BOSS, chapter = 3, settle = 1.0f) { g ->
+            g.enterRoomForTest("core3", 20f, 0f)
+            g.monster.place("core3", 25f, 0f, -1)
+            g.monster2.place("core3", 15f, 0f, 1)
+        }
+        shoot("ch2_fight_lift", com.expstudio.facilitycore.game.Stage2.LIFT_FIGHT, chapter = 2, settle = 1.0f) { g ->
+            g.enterRoomForTest("car", 7f, 0f)
+            g.monster.place("car", 11f, 0f, -1)
+        }
+        // The grab, at the moment the claws have him and it walks underneath.
+        for ((name, at) in listOf("ch2_grab_1_down" to 0.7f, "ch2_grab_2_shut" to 1.15f,
+                                  "ch2_grab_3_up" to 2.6f)) {
+            shoot(name, com.expstudio.facilitycore.game.Stage2.HOIST_ESCAPE, chapter = 2, settle = at) { g ->
+                g.enterRoomForTest("hoist", 11f, 0f)
+                val sw = g.level.room("hoist").props
+                    .filterIsInstance<com.expstudio.facilitycore.game.KeySwitch>().first()
+                g.monster.place("hoist", 5f, 0f, 1)
+                g.monster.mode = com.expstudio.facilitycore.game.Monster.Mode.CHASING
+                g.onSwitchUsedForTest(sw)
+            }
+        }
+    }
+
     /** Chapter 3: the rooms that carry the chapter's look and its mechanic. */
     @Test
     fun captureChapter3Frames() {

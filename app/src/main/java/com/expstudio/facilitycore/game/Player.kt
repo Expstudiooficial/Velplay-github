@@ -39,6 +39,14 @@ class Player {
     var controlEnabled = true
     var visible = true
 
+    /**
+     * Contact shadow. Turned off whenever something else is carrying the body —
+     * the hoist claws, the hand mid-flight — because those hold vy at zero, and
+     * a shadow drawn from that reads as a black disc the player is standing on
+     * in mid-air.
+     */
+    var shadow = true
+
     /** Set while the player is hauling the heavy feeder cable. */
     var carrying = false
 
@@ -290,7 +298,7 @@ class Player {
 
         // Contact shadow: tight and dark when planted, wide and faint in the air.
         val air = if (onGround) 0f else MathX.clamp(abs(vy) / 9f, 0f, 1f)
-        d.ellipse(
+        if (shadow) d.ellipse(
             c, sx, feetY + cam.s(0.02f),
             cam.s(0.46f * (1f - crouchBlend * 0.22f)) * (1f + air * 0.5f),
             cam.s(0.13f) * (1f - air * 0.35f),

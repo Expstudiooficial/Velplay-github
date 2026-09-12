@@ -51,6 +51,24 @@ class Sfx {
         }
     }
 
+    /**
+     * Renders one clip's PCM without an AudioTrack behind it, so the synthesis
+     * can be measured off-device. The monster's voice has objective properties
+     * — where its weight sits, whether it holds — and those are worth holding
+     * on to.
+     */
+    internal fun pcmForTest(id: Id): ShortArray = when (id) {
+        Id.SCREAM -> scream()
+        Id.SNARL -> snarl()
+        Id.GROAN -> groan()
+        Id.BREATH -> breath()
+        Id.WHISPER -> whisper()
+        Id.HEARTBEAT -> heartbeat()
+        Id.STINGER -> stinger()
+        Id.RISER -> riser()
+        else -> ShortArray(0)
+    }
+
     private fun build() {
         put(Id.CLICK, ui(760f, 0.045f, 0.16f))
         put(Id.CONFIRM, confirm())
@@ -381,51 +399,113 @@ class Sfx {
      * Not a musical scream. A formant-shaped shriek with unstable pitch, a
      * second detuned voice underneath it, and enough drive to tear.
      */
+    /**
+     * The thing's voice.
+     *
+     * Deliberately not a scream in the human sense. The old one held a 620 Hz
+     * sawtooth vowel for a second and a half, which is a person going "aaah" —
+     * comic rather than frightening, and it wore out the moment you heard it
+     * twice. What replaces it is built the way a real roar is: an intake, then
+     * a low fundamental that collapses downward, the harmonics deliberately
+     * detuned away from any musical interval so the ear cannot resolve it into
+     * a note, ring-modulated so it is textured rather than tonal, and a sub you
+     * feel before you hear.
+     *
+     * Nothing in it sustains. It arrives, it comes apart, it stops.
+     */
     private fun scream(): ShortArray {
-        val b = Synth.buffer(1.6f)
-        val jitter = Random(9)
-        var wobble = 0f
-        val jitterTable = FloatArray(b.size)
-        for (i in jitterTable.indices) {
-            if (i % 220 == 0) wobble = (jitter.nextFloat() * 2f - 1f) * 70f
-            jitterTable[i] = wobble
+        val b = Synth.buffer(1.15f)
+        val n = b.size
+        val rng = Random(9)
+
+        // The intake. A roar without one is just a noise starting.
+        val inhaleEnd = (n * 0.16f).toInt()
+        for (i in 0 until inhaleEnd) {
+            val p = i.toFloat() / inhaleEnd
+            val env = p * p * (1f - p * 0.2f)
+            b[i] += (rng.nextFloat() * 2f - 1f) * env * 0.34f
         }
 
-        fun freqAt(t: Float, base: Float): Float {
-            val i = (t * (b.size - 1)).toInt().coerceIn(0, b.size - 1)
-            // Falls away as it runs out of breath, and never sits still.
-            return base * (1f - 0.42f * t) + jitterTable[i] + 26f * sin(t * 58.0).toFloat()
+        // Pitch: a hard fall, not a held note. 118 Hz down to 44 Hz, with a
+        // rasp on top that never settles.
+        val rasp = FloatArray(n)
+        var hold = 0f
+        for (i in rasp.indices) {
+            if (i % 130 == 0) hold = (rng.nextFloat() * 2f - 1f)
+            rasp[i] = hold
+        }
+        fun fund(t: Float): Float {
+            val i = (t * (n - 1)).toInt().coerceIn(0, n - 1)
+            val fall = 118f * (1f - 0.63f * t * t)
+            return fall + rasp[i] * 9f + 5.5f * sin(t * 31.0).toFloat()
         }
 
-        Synth.addTone(b, 0.34f, { freqAt(it, 620f) }, { Synth.adsr(it, b.size, 0.03f, 0.2f, 0.8f, 0.7f) }) { Synth.saw(it) }
-        Synth.addTone(b, 0.20f, { freqAt(it, 934f) }, { Synth.adsr(it, b.size, 0.05f, 0.2f, 0.7f, 0.8f) }) { Synth.saw(it) }
-        Synth.addTone(b, 0.14f, { freqAt(it, 311f) }, { Synth.adsr(it, b.size, 0.02f, 0.3f, 0.8f, 0.6f) }) { Synth.square(it, 0.32) }
-        Synth.addNoise(b, 0.20f, 13) { Synth.adsr(it, b.size, 0.04f, 0.25f, 0.6f, 0.8f) }
-        // Vocal-tract formants: this is what makes it read as a throat.
-        Synth.lowPass(b, { t -> 2400f - 900f * t }, 0.55f)
-        Synth.highPass(b, 140f)
-        Synth.saturate(b, 3.4f)
-        Synth.room(b, 0.12f, 0.42f, 0.5f)
-        Synth.normalise(b, 0.95f)
-        Synth.deClick(b)
-        return Synth.toPcm(b)
-    }
+        val body = { i: Int -> Synth.adsr(i, n, 0.035f, 0.30f, 0.58f, 0.55f) }
+        Synth.addTone(b, 0.40f, { fund(it) }, body) { Synth.saw(it) }
+        // Detuned inharmonic partials: 2.41x and 3.77x are not intervals, so the
+        // ear never resolves the stack into a pitch it can name.
+        Synth.addTone(b, 0.22f, { fund(it) * 2.41f }, body) { Synth.saw(it) }
+        Synth.addTone(b, 0.13f, { fund(it) * 3.77f }, body) { Synth.square(it, 0.36) }
+        // The sub. Below where most phones reproduce, which is the point: on a
+        // speaker it is felt as pressure rather than heard as a tone.
+        Synth.addTone(b, 0.34f, { fund(it) * 0.5f }, { i -> Synth.adsr(i, n, 0.02f, 0.4f, 0.7f, 0.6f) })
 
-    private fun snarl(): ShortArray {
-        val b = Synth.buffer(0.9f)
-        Synth.addNoise(b, 0.5f, 17) { Synth.adsr(it, b.size, 0.05f, 0.2f, 0.7f, 0.4f) }
-        // Amplitude modulation at growl rate gives it a rasp.
+        // Breath through the whole of it, tracking the same envelope.
+        Synth.addNoise(b, 0.26f, 13) { i -> body(i) * (0.5f + 0.5f * Synth.ramp(i, n, 0.6f)) }
+
+        // Ring modulation at a low, non-harmonic rate: this is what stops it
+        // sounding like a voice and starts it sounding like an animal.
         for (i in b.indices) {
             val t = i.toFloat() / RATE
-            b[i] *= 0.55f + 0.45f * sin(2.0 * PI * 42.0 * t).toFloat()
+            b[i] *= 0.62f + 0.38f * sin(2.0 * PI * 37.0 * t + sin(t * 9.0) * 2.0).toFloat()
         }
-        Synth.addTone(b, 0.22f, { t -> 74f - 18f * t }, { Synth.adsr(it, b.size, 0.04f, 0.2f, 0.8f, 0.4f) }) { Synth.saw(it) }
-        Synth.lowPass(b, { t -> 1100f - 500f * t }, 0.6f)
-        Synth.saturate(b, 2.6f)
-        Synth.normalise(b, 0.72f)
+
+        // A throat, not a horn: the formant sweeps down as it runs out.
+        Synth.lowPass(b, { t -> 1750f - 1150f * t }, 0.62f)
+        Synth.highPass(b, 48f)
+        Synth.saturate(b, 4.2f)
+        Synth.room(b, 0.085f, 0.34f, 0.4f)
+        Synth.normalise(b, 0.96f)
         Synth.deClick(b)
         return Synth.toPcm(b)
     }
+
+    /**
+     * Close-quarters growl. The roar's smaller relative: same falling
+     * fundamental and same inharmonic stack, but short, wet and without the
+     * intake — it is the sound of something deciding, not announcing.
+     */
+    private fun snarl(): ShortArray {
+        val b = Synth.buffer(0.72f)
+        val n = b.size
+        val rng = Random(17)
+        val rasp = FloatArray(n)
+        var hold = 0f
+        for (i in rasp.indices) {
+            if (i % 96 == 0) hold = (rng.nextFloat() * 2f - 1f)
+            rasp[i] = hold
+        }
+        fun fund(t: Float): Float = 96f * (1f - 0.34f * t) + rasp[(t * (n - 1)).toInt().coerceIn(0, n - 1)] * 11f
+
+        val env = { i: Int -> Synth.adsr(i, n, 0.02f, 0.22f, 0.62f, 0.4f) }
+        Synth.addTone(b, 0.34f, { fund(it) }, env) { Synth.saw(it) }
+        Synth.addTone(b, 0.16f, { fund(it) * 2.41f }, env) { Synth.saw(it) }
+        Synth.addNoise(b, 0.40f, 17, env)
+        // Growl-rate modulation, slower than the old 42 Hz buzz so it reads as
+        // a throat closing rather than an electrical hum.
+        for (i in b.indices) {
+            val t = i.toFloat() / RATE
+            b[i] *= 0.5f + 0.5f * sin(2.0 * PI * 26.0 * t).toFloat()
+        }
+        Synth.lowPass(b, { t -> 950f - 430f * t }, 0.66f)
+        Synth.highPass(b, 55f)
+        Synth.saturate(b, 3.1f)
+        Synth.room(b, 0.055f, 0.22f, 0.28f)
+        Synth.normalise(b, 0.80f)
+        Synth.deClick(b)
+        return Synth.toPcm(b)
+    }
+
 
     private fun whisper(): ShortArray {
         val b = Synth.buffer(1.7f)

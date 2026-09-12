@@ -294,6 +294,7 @@ class Reach {
 
     /** Cancels whatever is in flight — used by deaths, cutscenes and room changes. */
     fun release(g: GameSession) {
+        g.player.shadow = true
         if (state == State.FLYING) g.player.controlEnabled = true
         target?.strain = 0f
         state = State.IDLE
@@ -381,6 +382,7 @@ class Reach {
         flyFromX = g.player.x
         flyFromY = g.player.y
         g.player.controlEnabled = false
+        g.player.shadow = false
         g.player.vx = 0f
         g.player.vy = 0f
     }

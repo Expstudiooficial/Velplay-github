@@ -332,7 +332,7 @@ class Chapter3Script : ChapterScript() {
             m.facing = if (toward > 0f) 1 else -1
             // It walks the stacks too. Standing on the top step is a better
             // position, not a safe one.
-            m.y = groundUnder(g, m.x)
+            m.y = groundUnder(g, m.x, m.y)
             attackTimer -= dt
             if (attackTimer <= 0f) {
                 swinging = true
@@ -364,15 +364,25 @@ class Chapter3Script : ChapterScript() {
         }
     }
 
-    /** The highest surface under [x] in the current room, as a foot height. */
-    private fun groundUnder(g: GameSession, x: Float): Float {
-        var best = 0f
+    /**
+     * The surface the hunter is standing on at [x], given it is currently at
+     * [from].
+     *
+     * Only surfaces it could actually step onto or drop to count. Taking the
+     * highest solid over its head instead put both monsters on the ceiling
+     * slab — fifteen metres up and off the top of the screen, which is why the
+     * fights looked empty.
+     */
+    private fun groundUnder(g: GameSession, x: Float, from: Float): Float {
+        var best = Float.NaN
         for (s in g.room.solids) {
-            if (s.kind == Solid.Kind.STRUCTURE && s.box.t >= 0f) continue
             if (x < s.box.l - 0.2f || x > s.box.r + 0.2f) continue
-            if (s.box.t < best) best = s.box.t
+            val top = s.box.t
+            if (top < from - STEP_UP) continue      // above it: a ceiling or a wall
+            if (top > from + DROP_DOWN) continue    // far below: nothing to walk on
+            if (best.isNaN() || top < best) best = top
         }
-        return best
+        return if (best.isNaN()) 0f else best
     }
 
     // ---- the duct ---------------------------------------------------------
@@ -488,7 +498,7 @@ class Chapter3Script : ChapterScript() {
             // side softer than the other and the squeeze has a way out of it.
             m.x = MathX.clamp(m.x + toward * STALK_SPEED * 0.68f * dt, bounds.l + 1.2f, bounds.r - 1.2f)
             m.facing = if (toward > 0f) 1 else -1
-            m.y = groundUnder(g, m.x)
+            m.y = groundUnder(g, m.x, m.y)
             boss2Timer -= dt
             if (boss2Timer <= 0f) {
                 boss2Swinging = true
@@ -678,6 +688,10 @@ class Chapter3Script : ChapterScript() {
         const val STRIKE_AT = 0.42f
         const val STRIKE_REACH = 2.7f
         const val STALK_SPEED = 2.55f
+
+        /** How far a hunter can step up, and how far it will drop, in one go. */
+        const val STEP_UP = 1.15f
+        const val DROP_DOWN = 2.6f
 
         const val SPRINT_START = 42f
         const val SPRINT_PER_VALVE = 9f

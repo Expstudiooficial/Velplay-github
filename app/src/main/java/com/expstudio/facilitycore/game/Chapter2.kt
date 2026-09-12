@@ -209,7 +209,10 @@ object Chapter2 {
         shell(openLeft = true, openRight = true)
         decorBox(0f, -0.4f, 22f, 0.4f, Palette.WALL_LIT, Decor.Kind.STRIPE)
         decorBox(9f, -8.9f, 8f, 0.3f, Palette.TRIM, Decor.Kind.PIPE)
-        props.add(Grabbers(Box.of(12.4f, -8.6f, 2.4f, 5.6f)))
+        // Long enough to actually reach the floor. At 5.6 m the claws stopped
+        // three metres short of a standing body, so the grab could only ever
+        // look like the player floating up beside them.
+        props.add(Grabbers(Box.of(12.4f, -8.6f, 2.4f, 7.4f)))
         props.add(KeySwitch(Box.of(16.4f, -2.6f, 1.0f, 1.0f), "sw_hoist", "HOIST"))
         solid(5f, -1.1f, 1.8f, 1.1f, Solid.Kind.CRATE)
 

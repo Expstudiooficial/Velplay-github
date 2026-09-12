@@ -17,6 +17,11 @@ fun GameSession.enterRoomForTest(roomId: String, x: Float, y: Float = 0f) {
     camera.follow(x, y - 1.1f, target.bounds, 0f, snap = true)
 }
 
+/** Fires a switch's story beat directly, for screenshots of what follows it. */
+fun GameSession.onSwitchUsedForTest(sw: com.expstudio.facilitycore.game.KeySwitch) {
+    script.onSwitchUsed(this, sw)
+}
+
 /** The solid list the session is currently colliding against. */
 fun GameSession.solidsForTest(): List<Box> {
     val out = ArrayList<Box>()

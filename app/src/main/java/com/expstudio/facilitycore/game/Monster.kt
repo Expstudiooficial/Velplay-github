@@ -118,11 +118,22 @@ class Monster {
         if (screamCooldown > 0f) screamCooldown -= dt
     }
 
+    /**
+     * Varied, and rarer than it was. Every 2.6 seconds on the dot turned the
+     * chase into a metronome with a monster attached; the ear stops hearing a
+     * sound it can predict, and starts being annoyed by it instead.
+     */
     fun wantsScream(): Boolean {
         if (screamCooldown > 0f) return false
-        screamCooldown = 2.6f
+        screamCount++
+        screamCooldown = 3.4f + (screamCount * 1.7f) % 2.6f
         return true
     }
+
+    /** How far off nominal to pitch the next one. Never twice the same. */
+    fun screamPitch(): Float = 0.84f + ((screamCount * 0.29f) % 0.34f)
+
+    private var screamCount = 0
 
     private fun bodyTint(): Int = if (kind == Kind.PLAYERR) PLAYERR_BODY else Palette.MONSTER
     private fun rimTint(): Int = if (kind == Kind.PLAYERR) PLAYERR_EYE else Palette.MONSTER_CRACK

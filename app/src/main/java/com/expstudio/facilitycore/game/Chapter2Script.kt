@@ -30,6 +30,9 @@ class Chapter2Script : ChapterScript() {
 
     // Hoist escape state.
     private var hoistTime = 0f
+    private var grabFromX = 0f
+    private var clawsClosed = false
+    private var hoistPassStarted = false
 
     // Smelter finale state.
     private var ventTime = 0f
@@ -45,6 +48,8 @@ class Chapter2Script : ChapterScript() {
         swinging = false
         liftDescend = 0f
         hoistTime = 0f
+        clawsClosed = false
+        hoistPassStarted = false
         ventTime = 0f
         ventArmed = stage > Stage2.VENT_RUN
     }
@@ -258,6 +263,36 @@ class Chapter2Script : ChapterScript() {
         g.camera.shake(0.3f, 1.2f)
     }
 
+    /**
+     * It walks under the hoisted player and keeps going.
+     *
+     * It used to be switched off the instant it passed x = 21, in full view of
+     * the player — a thing that simply stopped existing. Now it walks off the
+     * side of the room and is gone because it has left, not because it was
+     * deleted.
+     */
+    /** Where the body hangs, never below the deck it was lifted off. */
+    private fun hangY(grab: Grabbers?): Float =
+        MathX.min((grab?.tipY() ?: 0f) + HANG, 0f)
+
+    private fun passUnderneath(g: GameSession, cx: Float, dt: Float) {
+        val m = g.monster
+        if (m.mode == Monster.Mode.HIDDEN) return
+        m.mode = Monster.Mode.CHASING
+        m.facing = 1
+        m.y = 0f
+        // If it happened to be ahead of the player, put it back behind so the
+        // pass actually reads as a pass.
+        if (!hoistPassStarted) {
+            hoistPassStarted = true
+            if (m.x > cx - 3f) m.x = cx - 7.5f
+            g.playSound(Sfx.Id.SNARL, 0.7f)
+        }
+        m.x += dt * HOIST_PASS_SPEED
+        // Well outside the room, and outside anything the camera can show.
+        if (m.x > g.room.bounds.r + 5f) m.mode = Monster.Mode.HIDDEN
+    }
+
     // ---- cutscenes --------------------------------------------------------
 
     override fun updateCut(g: GameSession, dt: Float): Boolean {
@@ -329,40 +364,74 @@ class Chapter2Script : ChapterScript() {
             }
             Cut.GRABBED -> {
                 hoistTime += dt
-                val grabbers = g.level.room("hoist").props.firstOrNull { it is Grabbers } as? Grabbers
-                grabbers?.armed = true
-                if (hoistTime < 1.0f) {
-                    // The claws come down and take you off the floor.
-                    g.player.visible = true
-                } else if (hoistTime < HOIST_HOLD) {
-                    grabbers?.holding = true
-                    // Hoisted out of reach; it passes underneath.
-                    g.player.teleport(g.player.x, -3.2f - (hoistTime - 1f) * 0.6f)
-                    g.player.vy = 0f
-                    if (g.monster.mode != Monster.Mode.HIDDEN) {
-                        g.monster.x += dt * 6.5f
-                        if (g.monster.x > 21f) {
-                            g.monster.mode = Monster.Mode.HIDDEN
-                            g.playSound(Sfx.Id.RUMBLE, 0.5f)
-                        }
+                val grab = g.level.room("hoist").props.firstOrNull { it is Grabbers } as? Grabbers
+                val cx = grab?.box?.cx ?: g.player.x
+                g.player.vx = 0f
+                g.player.vy = 0f
+                g.player.shadow = hoistTime < REACH_SECONDS
+                when {
+                    // The claws come down, and the player is walked in under them.
+                    // Both halves matter: a grab where the body never moves to
+                    // meet the claws reads as levitation, which is what it was.
+                    hoistTime < REACH_SECONDS -> {
+                        val p = MathX.smoothStep(hoistTime / REACH_SECONDS)
+                        grab?.commanded = p
+                        g.player.teleport(MathX.lerp(grabFromX, cx, p), 0f)
                     }
-                } else {
-                    grabbers?.holding = false
-                    grabbers?.armed = false
-                    g.setCut(Cut.HOISTED)
+                    // They close on him. This is the beat that was missing.
+                    hoistTime < REACH_SECONDS + CLOSE_SECONDS -> {
+                        grab?.commanded = 1f
+                        grab?.holding = true
+                        if (!clawsClosed) {
+                            clawsClosed = true
+                            g.playSound(Sfx.Id.CLANK, 1f)
+                            g.playSound(Sfx.Id.IMPACT, 0.55f)
+                            g.camera.shake(0.4f, 0.4f)
+                            g.onHaptic?.invoke(45)
+                        }
+                        g.player.teleport(cx, hangY(grab))
+                    }
+                    hoistTime < HOIST_HOLD -> {
+                        // Carried up, hanging from the claws rather than beside them.
+                        val p = MathX.smoothStep(
+                            ((hoistTime - REACH_SECONDS - CLOSE_SECONDS) / LIFT_SECONDS).coerceIn(0f, 1f)
+                        )
+                        grab?.commanded = MathX.lerp(1f, LIFTED_EXTEND, p)
+                        grab?.holding = true
+                        g.player.teleport(cx, hangY(grab))
+                        passUnderneath(g, cx, dt)
+                    }
+                    else -> {
+                        g.setCut(Cut.HOISTED)
+                    }
                 }
             }
             Cut.HOISTED -> {
-                // Lowered back onto the deck.
-                g.player.vy = 3.2f
-                if (g.player.onGround || g.cutTime > 2.5f) {
-                    g.endCut()
-                    g.setStage(Stage2.DROPPED)
-                    (g.level.room("hoist").props.firstOrNull { it is Door && it.name == "door_hoist" } as? Door)
-                        ?.let { it.locked = false; it.forceOpen() }
-                    g.playSound(Sfx.Id.THUD, 0.5f)
-                    g.say("It went straight past. It never looked up.")
-                    g.say("Move, before it circles back.", blocking = false)
+                val grab = g.level.room("hoist").props.firstOrNull { it is Grabbers } as? Grabbers
+                val cx = grab?.box?.cx ?: g.player.x
+                val p = MathX.smoothStep((g.cutTime / LOWER_SECONDS).coerceIn(0f, 1f))
+                grab?.commanded = MathX.lerp(LIFTED_EXTEND, 1f, p)
+                g.player.shadow = p >= 0.94f
+                if (p < 0.94f) {
+                    // Lowered, still held, all the way back down to the deck.
+                    grab?.holding = true
+                    g.player.teleport(cx, hangY(grab))
+                    g.player.vx = 0f
+                    g.player.vy = 0f
+                } else {
+                    grab?.holding = false
+                    if (g.player.onGround || g.cutTime > LOWER_SECONDS + 1.4f) {
+                        grab?.commanded = null
+                        grab?.armed = false
+                        g.player.shadow = true
+                        g.endCut()
+                        g.setStage(Stage2.DROPPED)
+                        (g.level.room("hoist").props.firstOrNull { it is Door && it.name == "door_hoist" } as? Door)
+                            ?.let { it.locked = false; it.forceOpen() }
+                        g.playSound(Sfx.Id.THUD, 0.5f)
+                        g.say("It went straight past. It never looked up.")
+                        g.say("Move, before it circles back.", blocking = false)
+                    }
                 }
             }
             Cut.SMELTER_END -> {
@@ -411,6 +480,9 @@ class Chapter2Script : ChapterScript() {
         g.stopChase()
         g.beginCut(Cut.GRABBED)
         hoistTime = 0f
+        clawsClosed = false
+        hoistPassStarted = false
+        grabFromX = g.player.x
         g.setStage(Stage2.HOIST_ESCAPE)
         g.camera.shake(0.3f, 0.7f)
         g.playSound(Sfx.Id.POWER)
@@ -464,7 +536,23 @@ class Chapter2Script : ChapterScript() {
         const val SWING_GAP = 1.9f
         const val STRIKE_AT = 0.52f
         const val STALK_SPEED = 1.5f
-        const val HOIST_HOLD = 5.0f
+        const val HOIST_HOLD = 5.4f
+        /** Claws down, claws shut, claws up. */
+        const val REACH_SECONDS = 0.85f
+        const val CLOSE_SECONDS = 0.45f
+        const val LIFT_SECONDS = 0.95f
+        const val LOWER_SECONDS = 1.25f
+        /** How far the claws stay out while holding him clear of the floor. */
+        const val LIFTED_EXTEND = 0.30f
+        /**
+         * Feet below the claw tips: they have him by the pack.
+         *
+         * Exactly the claws' reach above the floor. A hair more and the grab
+         * seats his feet under the floor slab, and the collision solver ejects
+         * him sideways across the room — which is what it did.
+         */
+        const val HANG = 1.20f
+        const val HOIST_PASS_SPEED = 7.5f
         const val OPENING_SECONDS = 11f
         const val FINALE_SECONDS = 9f
     }

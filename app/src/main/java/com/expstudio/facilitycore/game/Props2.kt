@@ -315,9 +315,24 @@ class Grabbers(box: Box) : Prop(box) {
     var armed = false
     var holding = false
 
+    /**
+     * When set, the script drives the claws frame by frame instead of the
+     * armed ramp. The grab has to be able to stop the claws exactly where the
+     * player is, and then carry them up at its own pace.
+     */
+    var commanded: Float? = null
+
+    /** World y of the claw tips — where whatever they have hold of hangs from. */
+    fun tipY(): Float = box.t + box.h * extend
+
     override fun interactLabel(g: GameSession): String = ""
 
     override fun update(g: GameSession, dt: Float) {
+        val driven = commanded
+        if (driven != null) {
+            extend = driven
+            return
+        }
         val target = if (armed) 1f else 0f
         extend = MathX.moveToward(extend, target, dt * 1.6f)
     }
