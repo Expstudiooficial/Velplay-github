@@ -108,6 +108,15 @@ That key is deliberately public. It is the right trade for sideloading a game to
 your own phone, and the wrong one for a Play Store listing, which needs a private
 upload key kept out of version control.
 
+**The in-game update check needs a public URL.** It fetches `latest.json` over
+plain HTTPS with no credentials, because an app shipped to phones must not carry
+a token. While this repository is private those URLs return 404 and the check
+reports that it could not reach the server — the button works, there is just
+nothing readable at the other end. Either make the repository public, or host
+`latest.json` and the APK on any public static host and repoint
+`UpdateService.MANIFEST_URL`. Sideloading `dist/facility-core.apk` by hand works
+either way.
+
 ## Building
 
 Requires the Android SDK (compileSdk 34) and JDK 17.

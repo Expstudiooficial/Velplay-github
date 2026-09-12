@@ -46,9 +46,17 @@ sealed class UpdateResult {
  */
 object UpdateService {
 
-    /** Raw manifest in the repository. Kept in one place so it is easy to repoint. */
+    /**
+     * Where the update manifest lives. Kept in one place so it is easy to move.
+     *
+     * This has to be readable without credentials — the app ships to phones and
+     * must not carry a token. While the repository is private, raw.github
+     * returns 404 to everyone and the check will report that it could not
+     * reach the server; making the repository public, or pointing this at any
+     * public static host, is all it needs.
+     */
     const val MANIFEST_URL =
-        "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/claude/facility-core-chapter-1-e0gx57/latest.json"
+        "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/main/latest.json"
 
     private const val TIMEOUT_MS = 15_000
 
