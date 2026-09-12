@@ -15,12 +15,12 @@
     "In-game updater, and every build now installs over the last one",
     "More settings: brightness, screen shake, effects, hints, left-handed"
   ],
-  "sizeBytes": 2664017,
+  "sizeBytes": 2664033,
   "sizeMb": 2.54,
-  "sha256": "37fa97473b0ae3954a8a0ff344bf5f036710463993e71742d6e7944d94785ccc",
+  "sha256": "cb29e35c759c010e080343a45050efd2acb218c75cd9ffbc0ead6928e154c5ad",
   "releasedAt": "2026-09-12",
   "minAndroid": "7.0 (API 24)",
-  "apkUrl": "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/main/dist/facility-core.apk",
-  "latestUrl": "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/main/latest.json",
-  "notes": "Installs over any earlier build and keeps every world. Every release is signed with the same key, which lives in keystore/ in this repository. The in-game updater needs these URLs to be readable without a token: while the repository is private they return 404, so make it public or host this file and the APK anywhere public and repoint UpdateService.MANIFEST_URL."
+  "apkUrl": "https://raw.githubusercontent.com/Expstudiooficial/facility-core-releases/main/facility-core.apk",
+  "latestUrl": "https://raw.githubusercontent.com/Expstudiooficial/facility-core-releases/main/latest.json",
+  "notes": "Installs over any earlier build and keeps every world. Every release is signed with one key so updates never need an uninstall. This manifest and the APK live in the public facility-core-releases repository; the game's source and its signing key stay private."
 }

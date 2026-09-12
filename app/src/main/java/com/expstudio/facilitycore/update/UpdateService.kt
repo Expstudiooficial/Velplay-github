@@ -50,13 +50,12 @@ object UpdateService {
      * Where the update manifest lives. Kept in one place so it is easy to move.
      *
      * This has to be readable without credentials — the app ships to phones and
-     * must not carry a token. While the repository is private, raw.github
-     * returns 404 to everyone and the check will report that it could not
-     * reach the server; making the repository public, or pointing this at any
-     * public static host, is all it needs.
+     * must not carry a token — so it points at a small public release channel
+     * rather than the game's own repository, which stays private along with the
+     * source and the signing key.
      */
     const val MANIFEST_URL =
-        "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/main/latest.json"
+        "https://raw.githubusercontent.com/Expstudiooficial/facility-core-releases/main/latest.json"
 
     private const val TIMEOUT_MS = 15_000
 
