@@ -221,7 +221,8 @@ class GameView(
         val jump = controls.jump.consumePress()
         val use = controls.interact.consumePress()
         val roll = controls.dodge.consumePress()
-        session.update(dt, controls.moveX, controls.sneakHeld, jump, use, roll)
+        val grab = controls.reach.consumePress()
+        session.update(dt, controls.moveX, controls.sneakHeld, jump, use, roll, grab, controls.reach.held)
 
         controls.jump.enabled = session.player.controlEnabled
         controls.sneak.enabled = session.player.controlEnabled
@@ -230,6 +231,10 @@ class GameView(
         controls.dodge.visible = session.dodgeUnlocked
         controls.dodge.enabled = session.player.controlEnabled && session.player.dodgeReady
         controls.dodgeCharge = session.player.dodgeChargeFraction
+        controls.reach.visible = session.reach.unlocked
+        controls.reach.enabled = session.player.controlEnabled || session.reach.busy
+        // Only lit when there is genuinely something to take hold of.
+        controls.reachTargeted = session.reach.unlocked && session.reach.ready && session.reach.pick(session) != null
 
         if (session.completed && !completeShown) {
             completeShown = true
@@ -257,6 +262,10 @@ class GameView(
                 return@synchronized true
             }
             if (session.cut == Cut.SMELTER_END && session.endingProgressCh2 >= 0.97f) {
+                onQuit?.invoke()
+                return@synchronized true
+            }
+            if (session.cut == Cut.CH3_ENDING && session.endingProgressCh3 >= 0.99f) {
                 onQuit?.invoke()
                 return@synchronized true
             }
@@ -328,6 +337,10 @@ class GameView(
             drawChapter2Opening(c, w, h)
         } else if (session.cut == Cut.SMELTER_END) {
             drawSmelterFinale(c, w, h)
+        } else if (session.cut == Cut.CH3_LAVA) {
+            drawChapter3Opening(c, w, h)
+        } else if (session.cut == Cut.CH3_ENDING) {
+            drawChapter3Ending(c, w, h)
         } else {
             session.render(c, draw, w, h)
             drawHud(c, w, h)
@@ -355,7 +368,9 @@ class GameView(
         controls.draw(c, draw)
 
         // Objective ribbon.
-        val objective = Stage.objectiveFor(session.stage)
+        // Ask the running chapter, not Chapter 1: the ribbon was showing the
+        // wrong chapter's objectives for the whole of Chapter 2.
+        val objective = session.script.objectiveFor(session.stage)
         val size = h * 0.036f
         val tw = draw.measure(objective, size, true)
         val pad = h * 0.022f
@@ -379,11 +394,35 @@ class GameView(
 
         drawInventory(c, h)
         if (session.maxHealth > 0) drawHealth(c, w, h)
+        drawEvacClock(c, w, h)
         if (session.hurtFlash > 0f) {
             draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.BAD, 0.22f * session.hurtFlash / 0.45f))
         }
         if (session.crouchHint && store.settings.hintsEnabled) drawCrouchHint(c, w, h)
         if (session.dialogueVisible) drawDialogue(c, w, h)
+    }
+
+    /**
+     * Chapter 3's evacuation clock. Only drawn while the run out is live, and
+     * only as a bar — a number would invite arithmetic, and the point is panic.
+     */
+    private fun drawEvacClock(c: Canvas, w: Float, h: Float) {
+        val script = session.script as? Chapter3Script ?: return
+        if (session.stage != Stage3.FINAL_RUN) return
+        val left = script.sprintRemaining
+        val f = MathX.clamp(left / Chapter3Script.SPRINT_SHOWN_MAX, 0f, 1f)
+        val bw = w * 0.36f
+        val bl = w * 0.5f - bw * 0.5f
+        val bt = h * 0.135f
+        val bh = h * 0.016f
+        draw.round(c, bl, bt, bl + bw, bt + bh, bh * 0.5f, Palette.withAlpha(Palette.VOID, 0.7f))
+        val tint = if (f < 0.28f) Palette.BAD else Palette.WARN
+        draw.round(c, bl, bt, bl + bw * f, bt + bh, bh * 0.5f, tint)
+        // It flickers when it is nearly gone, which is the only warning given.
+        if (f < 0.28f) {
+            val flash = 0.35f + 0.4f * sin(session.time * 14f)
+            draw.roundStroke(c, bl, bt, bl + bw, bt + bh, bh * 0.5f, Palette.withAlpha(Palette.BAD, flash), 3f)
+        }
     }
 
     private fun drawInventory(c: Canvas, h: Float) {
@@ -589,6 +628,98 @@ class GameView(
     }
 
     private val smelterScene = SmelterScene()
+
+    /**
+     * Chapter 3 opens on Chapter 2's last shot, replayed from the deck above the
+     * pour — the same fall, the same window, one floor further up.
+     */
+    private fun drawChapter3Opening(c: Canvas, w: Float, h: Float) {
+        val p = session.endingProgressCh3
+        smelterScene.draw(c, draw, w, h, session.time, p)
+        if (smelterScene.consumeImpact()) {
+            audio.play(Sfx.Id.SCREAM)
+            audio.play(Sfx.Id.RUMBLE)
+            session.onHaptic?.invoke(200)
+        }
+        if (p < 0.14f) {
+            val a = 1f - p / 0.14f
+            draw.textCentered(c, "CHAPTER 3", w * 0.5f, h * 0.16f, h * 0.062f, Palette.withAlpha(Palette.TEXT, a), true)
+            draw.textCentered(c, "SUBFLOOR 2", w * 0.5f, h * 0.23f, h * 0.030f, Palette.withAlpha(Palette.ACCENT, a), true)
+        }
+    }
+
+    /**
+     * The last shot: the well takes both of them, and the light it makes doing
+     * it is the only thing left on the screen.
+     */
+    private fun drawChapter3Ending(c: Canvas, w: Float, h: Float) {
+        val p = session.endingProgressCh3
+        draw.rect(c, 0f, 0f, w, h, Palette.VOID)
+        val cx = w * 0.5f
+        val floorY = h * 0.72f
+
+        // The lip of the pit, from the far side.
+        draw.rect(c, 0f, floorY, w * 0.30f, h, Palette.mix(Palette.FLOOR, Palette.VOID, 0.45f))
+        draw.rect(c, w * 0.70f, floorY, w, h, Palette.mix(Palette.FLOOR, Palette.VOID, 0.45f))
+        draw.rect(c, 0f, floorY, w * 0.30f, floorY + h * 0.012f, Palette.TRIM)
+        draw.rect(c, w * 0.70f, floorY, w, floorY + h * 0.012f, Palette.TRIM)
+        // The crate, sitting exactly where the landing used to be.
+        val crateW = w * 0.085f
+        draw.round(c, w * 0.70f, floorY - crateW, w * 0.70f + crateW, floorY, h * 0.008f,
+            Palette.mix(Palette.WALL_LIT, Palette.VOID, 0.25f))
+
+        // Two silhouettes, out over nothing.
+        val fall = MathX.clamp((p - 0.18f) / 0.5f, 0f, 1f)
+        val arc = MathX.smoothStep(fall)
+        var i = 0
+        while (i < 2) {
+            val lead = if (i == 0) 0f else 0.09f
+            val f = MathX.clamp((p - 0.18f - lead) / 0.5f, 0f, 1f)
+            val fx = MathX.lerp(w * 0.74f, cx + (if (i == 0) -w * 0.02f else w * 0.03f), MathX.smoothStep(f))
+            val fy = MathX.lerp(floorY - h * 0.16f, h * 1.15f, f * f)
+            val scale = MathX.lerp(1f, 0.42f, f)
+            val bh = h * 0.30f * scale
+            val bw = bh * 0.34f
+            val tint = if (i == 0) Palette.MONSTER else Palette.mix(Palette.MONSTER, Palette.MONSTER_CRACK, 0.35f)
+            draw.round(c, fx - bw * 0.5f, fy - bh, fx + bw * 0.5f, fy, bw * 0.3f, tint)
+            draw.circle(c, fx, fy - bh, bw * 0.52f, tint)
+            if (f < 0.85f) {
+                val ea = 1f - f / 0.85f
+                draw.circle(c, fx - bw * 0.18f, fy - bh, bw * 0.10f, Palette.withAlpha(Palette.MONSTER_EYE, ea))
+                draw.circle(c, fx + bw * 0.18f, fy - bh, bw * 0.10f, Palette.withAlpha(Palette.MONSTER_EYE, ea))
+            }
+            i++
+        }
+
+        // The well answers.
+        val bloom = MathX.clamp((p - 0.55f) / 0.25f, 0f, 1f)
+        val heat = MathX.lerp(0.25f, 1f, arc)
+        var band = 0
+        while (band < 9) {
+            val bf = band / 9f
+            val yy = MathX.lerp(h * 1.05f, floorY, bf)
+            val wob = sin(session.time * (2.4f + band * 0.35f) + band) * w * 0.012f
+            draw.rect(c, w * 0.30f + wob, yy - h * 0.05f, w * 0.70f + wob, yy,
+                Palette.withAlpha(Palette.mix(Palette.WARN, Palette.BAD, bf), 0.5f * heat))
+            band++
+        }
+        draw.glow(c, cx, floorY + h * 0.06f, w * (0.22f + 0.55f * bloom), Palette.WARN, 1.2f * heat)
+        draw.glow(c, cx, floorY + h * 0.06f, w * (0.10f + 0.30f * bloom), Palette.TEXT, 1.1f * bloom)
+        if (bloom > 0f) draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.TEXT, bloom * bloom * 0.92f))
+
+        // Then nothing, and then the card.
+        val settle = MathX.clamp((p - 0.80f) / 0.12f, 0f, 1f)
+        if (settle > 0f) draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.VOID, settle))
+        if (p >= 0.97f) {
+            draw.textCentered(c, "CHAPTER 3 COMPLETE", w * 0.5f, h * 0.42f, h * 0.075f, Palette.TEXT, true)
+            draw.textCentered(c, "The facility is quiet. It was never going to be quiet.",
+                w * 0.5f, h * 0.52f, h * 0.032f, Palette.TEXT_DIM)
+            draw.textCentered(c, "Ren is still down there.", w * 0.5f, h * 0.575f, h * 0.032f, Palette.TEXT_DIM)
+            val hint = 0.45f + 0.35f * sin(session.time * 3f)
+            draw.textCentered(c, "tap to return to the menu", w * 0.5f, h * 0.68f, h * 0.034f,
+                Palette.withAlpha(Palette.ACCENT, hint), true)
+        }
+    }
 
     private fun drawPauseSheet(c: Canvas, w: Float, h: Float) {
         draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.VOID, 0.78f))

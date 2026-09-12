@@ -19,7 +19,9 @@ class Line(val text: String, val blocking: Boolean = true, val hold: Float = 0f)
 enum class Cut {
     NONE, INTRO, ENCOUNTER, VENT_SWIPE, FALL, PEER, ENDING, DEATH,
     // Chapter 2.
-    CH2_OPENING, CH2_FIGHT_INTRO, DOOR_BREAK, GRABBED, HOISTED, SMELTER_END
+    CH2_OPENING, CH2_FIGHT_INTRO, DOOR_BREAK, GRABBED, HOISTED, SMELTER_END,
+    // Chapter 3.
+    CH3_LAVA, CH3_LIFT, CH3_STUCK, CH3_IGNITE, CH3_BOSS_IN, CH3_ENDING
 }
 
 /**
@@ -42,6 +44,12 @@ class GameSession(
 
     val player = Player()
     val monster = Monster()
+
+    /**
+     * The second hunter. Chapter 3's last fight has both of them in the room at
+     * once, and a fight the player is told is two-on-one has to actually be.
+     */
+    val monster2 = Monster()
     val camera = Camera()
     val particles = Particles()
 
@@ -79,6 +87,9 @@ class GameSession(
     /** Progress through a Chapter 2 cutscene, driven by that chapter's script. */
     var endingProgressCh2 = 0f
 
+    /** Chapter 3's closing shot. */
+    var endingProgressCh3 = 0f
+
     /** Health, used by set-piece fights. maxHealth of 0 hides the pips. */
     var maxHealth = 0
     var health = 0
@@ -89,6 +100,9 @@ class GameSession(
 
     /** Whether the DODGE control is available in this chapter. */
     var dodgeUnlocked = false
+
+    /** Chapter 3's extendable hand. Inert until the archive hands it over. */
+    val reach = Reach()
     var completed = false
         private set
 
@@ -130,6 +144,11 @@ class GameSession(
      */
     var tension = 0f
         private set
+
+    /** Lets a mechanic add dread of its own — straining against a jammed door. */
+    fun addTension(amount: Float) {
+        tension = MathX.clamp(tension + amount, 0f, 1f)
+    }
     private var heartTimer = 0f
     private var breathTimer = 0f
     private var ambientTimer = 6f
@@ -171,12 +190,15 @@ class GameSession(
         repairQueued = false
         blockedTime = 0f
         crouchHint = false
+        chaseStageValue = NO_CHASE
+        reach.reset()
         cut = Cut.NONE
         cutTime = 0f
         chaseTime = 0f
         deathFlash = 0f
         endingProgress = 0f
         endingProgressCh2 = 0f
+        endingProgressCh3 = 0f
         hurtFlash = 0f
         invulnerable = 0f
         maxHealth = 0
@@ -193,6 +215,8 @@ class GameSession(
         player.speedScale = 1f
         monster.mode = Monster.Mode.HIDDEN
         monster.scale = 1f
+        monster2.mode = Monster.Mode.HIDDEN
+        monster2.scale = 1f
         particles.clear()
 
         script.applyStage(this, checkpoint)
@@ -235,9 +259,11 @@ class GameSession(
      * black the instant the player stepped through the hatch.
      */
     fun beginCut(next: Cut) {
+        reach.release(this)
         cut = next
         cutTime = 0f
         endingProgressCh2 = 0f
+        endingProgressCh3 = 0f
         player.controlEnabled = false
     }
 
@@ -257,6 +283,9 @@ class GameSession(
     fun moveTo(roomId: String, x: Float, y: Float) {
         val next = level.rooms[roomId] ?: return
         room = next
+        // Anchors belong to a room; carrying a live grab across a doorway would
+        // leave an arm stretched into a room that no longer exists.
+        reach.release(this)
         player.teleport(x, y)
         camera.follow(x, y - 1.1f, room.bounds, 0f, snap = true)
     }
@@ -281,12 +310,16 @@ class GameSession(
         crouch: Boolean,
         jumpPressed: Boolean,
         interactPressed: Boolean,
-        dodgePressed: Boolean = false
+        dodgePressed: Boolean = false,
+        reachPressed: Boolean = false,
+        reachHeld: Boolean = false
     ) {
         time += dt
         if (hurtFlash > 0f) hurtFlash -= dt
         if (invulnerable > 0f) invulnerable -= dt
-        if (dodgePressed && dodgeUnlocked) player.startDodge(moveX)
+        // The hand outranks the roll: you cannot roll out of a pull you started.
+        if (dodgePressed && dodgeUnlocked && !reach.busy) player.startDodge(moveX)
+        if (reachPressed && player.controlEnabled) reach.fire(this)
         fade = MathX.moveToward(fade, fadeTarget, dt * 1.6f)
 
         overlay?.let { o ->
@@ -325,8 +358,10 @@ class GameSession(
             }
         }
 
+        reach.update(this, dt, reachHeld)
         for (p in room.props) p.update(this, dt)
         monster.update(dt)
+        monster2.update(dt)
         particles.update(dt)
         player.hasPack = hasKeyPack
 
@@ -334,7 +369,9 @@ class GameSession(
         updateTension(dt)
         updateCrouchHint(dt, moveX, crouch)
         updateInteraction(interactPressed)
-        if (cut == Cut.NONE) checkExits()
+        // Not while the hand has hold of something: you cannot walk through a
+        // door halfway through being thrown across a room.
+        if (cut == Cut.NONE && !reach.busy) checkExits()
         updateStory(dt)
         updateChase(dt)
 
@@ -509,6 +546,10 @@ class GameSession(
 
     private fun transition(roomId: String, sx: Float, sy: Float) {
         val next = level.rooms[roomId] ?: return
+        // Anchors belong to the room they are bolted to. A flight left running
+        // across a doorway kept teleporting the player along the old room's arc
+        // inside the new one, and left them outside its walls entirely.
+        reach.release(this)
         // A carried coil travels with us: hand it over rather than leaving it
         // registered in both rooms' prop lists.
         val previous = room
@@ -593,6 +634,7 @@ class GameSession(
             monster.mode = Monster.Mode.HIDDEN
             player.speedScale = 1f
         }
+        chaseStageValue = NO_CHASE
     }
 
     /** Set when a set-piece wants death to retry somewhere specific. */
@@ -610,7 +652,14 @@ class GameSession(
     }
 
     /** The stage value that means "being chased" in the running chapter. */
-    var chaseStageValue = Stage.CHASE
+    /**
+     * The stage a live pursuit belongs to, or -1 for "no chase running".
+     *
+     * It used to default to Chapter 1's CHASE, which is the number 10 — and
+     * Chapter 3's DETOUR is also 10, so the whole detour ran with a chase clock
+     * counting down behind it and killed the player every thirty seconds.
+     */
+    var chaseStageValue = NO_CHASE
         private set
 
     private fun updateChase(dt: Float) {
@@ -635,6 +684,7 @@ class GameSession(
     /** Ends a pursuit and drops the named shutter behind the player. */
     fun survivedChase(survivedStage: Int, shutterName: String) {
         setStage(survivedStage)
+        chaseStageValue = NO_CHASE
         player.speedScale = 1f
         monster.mode = Monster.Mode.HIDDEN
         for (r in level.rooms.values) {
@@ -665,6 +715,29 @@ class GameSession(
     //
     // Each of these does the part every chapter shares — sound, particles, the
     // flag on the session — and hands the story decision to the script.
+
+    /** Routed to the chapter script so anchors can drive story beats. */
+    fun onAnchorPulled(anchor: ReachAnchor) {
+        script.onAnchorPulled(this, anchor)
+    }
+
+    /**
+     * Unlocks and opens a door by name in the current room. Chapter 3's corridors
+     * are composed, so their terminals address doors by name rather than holding
+     * a reference the composer would have had to hand out.
+     */
+    fun releaseDoor(name: String) {
+        if (name.isEmpty()) return
+        val door = room.props.firstOrNull { it is Door && it.name == name } as? Door ?: return
+        door.forceOpen()
+        onDoorOpened(door)
+    }
+
+    fun onValvePulled(valve: SnapValve, group: String) = script.onValvePulled(this, valve, group)
+    fun onArchiveNode(node: ArchiveNode) = script.onArchiveNode(this, node)
+    fun onArchiveCoreTaken() = script.onArchiveCoreTaken(this)
+    fun onEmitterArmed(emitter: LaserEmitter) = script.onEmitterArmed(this, emitter)
+    fun onSuperDatabaseTaken() = script.onSuperDatabaseTaken(this)
 
     fun onBreakersSolved(gateId: String) {
         val gate = room.props.firstOrNull { it is Door && it.name == gateId } as? Door
@@ -803,6 +876,9 @@ class GameSession(
 
         for (p in room.props) if (camera.isVisible(p.box.inflated(3f))) p.draw(c, d, camera, this)
 
+        if (monster2.mode != Monster.Mode.HIDDEN && monster2.roomId == room.id) {
+            monster2.draw(c, d, camera, time)
+        }
         if (monster.mode != Monster.Mode.HIDDEN && monster.roomId == room.id) {
             if (monster.mode == Monster.Mode.PEERING) drawPeering(c, d)
             else if (monster.mode == Monster.Mode.VENT_SWIPE) drawVentSwipe(c, d)
@@ -811,6 +887,8 @@ class GameSession(
 
         carriedCable?.let { drawCarriedCable(c, d, it) }
         player.draw(c, d, camera, time)
+        // Over the body: the arm comes out of the shoulder and should occlude it.
+        reach.draw(c, d, camera, this)
         particles.draw(c, d, camera)
 
         sc.drawDust(c, d, camera, time, player.x, player.y - 1f, 0.35f + amb * 0.65f)
@@ -1053,6 +1131,8 @@ class GameSession(
         const val ENDING_SECONDS = 9.5f
         const val DEATH_SECONDS = 1.9f
         const val CHASE_SPEED_BOOST = 1.15f
+        /** No stage number, so no stage is ever mistaken for a live pursuit. */
+        const val NO_CHASE = -1
         /** How long to be stopped by a low gap before the game says so. */
         const val HINT_DELAY = 0.35f
         /** Mercy window after a hit lands. */

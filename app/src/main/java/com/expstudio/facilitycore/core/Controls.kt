@@ -65,6 +65,8 @@ class Controls {
     val interact = TouchButton("USE")
     /** Chapter 2's roll. Hidden until a chapter turns it on. */
     val dodge = TouchButton("DODGE").apply { visible = false }
+    /** Chapter 3's extendable hand. Held, not tapped: most anchors take strain. */
+    val reach = TouchButton("REACH").apply { visible = false }
 
     var moveX = 0f
         private set
@@ -103,6 +105,7 @@ class Controls {
         sneak.radius = r * 0.86f
         interact.radius = r * 0.98f
         dodge.radius = r * 0.86f
+        reach.radius = r * 0.90f
 
         val margin = r * 1.35f
         // Mirror every x about the screen centre when left-handed.
@@ -116,6 +119,10 @@ class Controls {
         // Above SNEAK, clear of every other hit area.
         dodge.cx = px(screenW - margin - r * 2.35f)
         dodge.cy = screenH - margin - r * 2.6f
+        // Left of USE and above DODGE: the hand is aimed, so it wants the
+        // steadiest part of the thumb's arc, not the corner.
+        reach.cx = px(screenW - margin - r * 4.35f)
+        reach.cy = screenH - margin - r * 1.35f
     }
 
     fun reset() {
@@ -123,11 +130,11 @@ class Controls {
         stickActive = false
         moveX = 0f
         sneakHeld = false
-        jump.reset(); sneak.reset(); interact.reset(); dodge.reset()
+        jump.reset(); sneak.reset(); interact.reset(); dodge.reset(); reach.reset()
     }
 
     fun update(dt: Float) {
-        jump.update(dt); sneak.update(dt); interact.update(dt); dodge.update(dt)
+        jump.update(dt); sneak.update(dt); interact.update(dt); dodge.update(dt); reach.update(dt)
         sneakHeld = sneak.held
     }
 
@@ -157,6 +164,7 @@ class Controls {
 
     private fun claim(id: Int, x: Float, y: Float) {
         if (jump.contains(x, y)) { jump.press(id); return }
+        if (reach.contains(x, y)) { reach.press(id); return }
         if (dodge.contains(x, y)) { dodge.press(id); return }
         if (sneak.contains(x, y)) { sneak.press(id); return }
         if (interact.contains(x, y)) { interact.press(id); return }
@@ -186,7 +194,7 @@ class Controls {
     }
 
     private fun release(id: Int) {
-        jump.release(id); sneak.release(id); interact.release(id); dodge.release(id)
+        jump.release(id); sneak.release(id); interact.release(id); dodge.release(id); reach.release(id)
         if (id == stickPointer) {
             stickPointer = -1
             stickActive = false
@@ -205,6 +213,13 @@ class Controls {
         drawButton(c, d, sneak, Palette.TEXT_DIM)
         drawButton(c, d, interact, Palette.WARN)
         drawButton(c, d, dodge, Palette.GOOD)
+        drawButton(c, d, reach, Palette.ACCENT)
+        // A ring around REACH when something is actually in range, so the player
+        // learns where anchors are without a single word of instruction.
+        if (reach.visible && reachTargeted) {
+            d.circleStroke(c, reach.cx, reach.cy, reach.radius * 1.20f,
+                Palette.withAlpha(Palette.ACCENT, 0.55f), 4f)
+        }
         // A sweep around DODGE showing the cooldown refilling.
         if (dodge.visible && dodgeCharge < 1f) {
             d.circleStroke(
@@ -216,6 +231,8 @@ class Controls {
 
     /** 0..1, mirrored from the player so the button can show its cooldown. */
     var dodgeCharge = 1f
+    /** True when the hand has something to grab; mirrored from the session. */
+    var reachTargeted = false
 
     private fun drawButton(c: Canvas, d: Draw, b: TouchButton, tint: Int) {
         if (!b.visible) return

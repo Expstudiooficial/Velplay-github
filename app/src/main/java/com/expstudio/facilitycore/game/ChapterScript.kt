@@ -53,9 +53,18 @@ abstract class ChapterScript {
     open fun onCubeInserted(g: GameSession, socket: CubeSocket) {}
     open fun onSwitchUsed(g: GameSession, sw: KeySwitch) {}
     open fun onTaskCompleted(g: GameSession, task: LiftTask) {}
+    open fun onAnchorPulled(g: GameSession, anchor: ReachAnchor) {}
+    open fun onValvePulled(g: GameSession, valve: SnapValve, group: String) {}
+    open fun onArchiveNode(g: GameSession, node: ArchiveNode) {}
+    open fun onArchiveCoreTaken(g: GameSession) {}
+    open fun onEmitterArmed(g: GameSession, emitter: LaserEmitter) {}
+    open fun onSuperDatabaseTaken(g: GameSession) {}
 
     companion object {
-        fun forChapter(chapter: Int): ChapterScript =
-            if (chapter >= 2) Chapter2Script() else Chapter1Script()
+        fun forChapter(chapter: Int): ChapterScript = when {
+            chapter >= 3 -> Chapter3Script()
+            chapter == 2 -> Chapter2Script()
+            else -> Chapter1Script()
+        }
     }
 }

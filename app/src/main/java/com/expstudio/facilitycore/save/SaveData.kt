@@ -34,7 +34,7 @@ data class WorldSave(
         fun fromJson(o: JSONObject): WorldSave = WorldSave(
             id = o.optString("id", UUID.randomUUID().toString()),
             name = o.optString("name", "World"),
-            chapter = o.optInt("chapter", 1).coerceIn(1, 2),
+            chapter = o.optInt("chapter", 1).coerceIn(1, 3),
             stage = o.optInt("stage", 0).coerceAtLeast(0),
             checkpoint = o.optInt("checkpoint", 0).coerceAtLeast(0),
             playSeconds = o.optLong("playSeconds", 0L).coerceAtLeast(0L),
@@ -72,6 +72,11 @@ class Settings(private val prefs: SharedPreferences) {
     var chapter2Unlocked: Boolean
         get() = prefs.getBoolean("ch2Unlocked", false)
         set(v) { prefs.edit().putBoolean("ch2Unlocked", v).apply() }
+
+    /** Set once any world finishes Chapter 2; gates Chapter 3 world creation. */
+    var chapter3Unlocked: Boolean
+        get() = prefs.getBoolean("ch3Unlocked", false)
+        set(v) { prefs.edit().putBoolean("ch3Unlocked", v).apply() }
 
     /** Screen shake intensity, 0 (off) .. 1.5 (heavy). */
     var shakeAmount: Float
@@ -151,7 +156,7 @@ class WorldStore(context: Context) {
         val world = WorldSave(
             id = UUID.randomUUID().toString(),
             name = clean,
-            chapter = chapter.coerceIn(1, 2),
+            chapter = chapter.coerceIn(1, 3),
             stage = 0,
             checkpoint = 0,
             playSeconds = 0L,
@@ -207,6 +212,7 @@ class WorldStore(context: Context) {
         worlds[idx] = world
         persist(worlds)
         if (world.completed && world.chapter == 1) settings.chapter2Unlocked = true
+        if (world.completed && world.chapter == 2) settings.chapter3Unlocked = true
     }
 
     private fun persist(worlds: List<WorldSave>) {

@@ -17,11 +17,15 @@ class Bot(private val session: GameSession, private val dir: Float = 1f) {
 
     private var stalled = 0f
     private var jumpCooldown = 0f
+    private var jumpAttempts = 0
     var useInteract = true
     /** When set, the bot only presses USE for these prompts. */
     var interactLabels: Set<String>? = null
     /** When false the bot stays low, only hopping obstacles that block it. */
     var climb = true
+    /** When set, the bot grabs anything the hand can reach, the way a player would. */
+    var useReach = false
+    private var reachWasReady = false
 
     private fun solids(): List<Box> {
         val out = ArrayList<Box>()
@@ -54,6 +58,12 @@ class Bot(private val session: GameSession, private val dir: Float = 1f) {
             it.t < y - 0.15f && it.t > y - 1.45f &&
                 (if (dir > 0f) it.l in x..(x + 1.75f) else it.r in (x - 1.75f)..x)
         }
+        // Something directly in the way that has to be hopped. It outranks a
+        // crouch: you cannot climb anything while holding SNEAK.
+        val stepBlocking = solids.any {
+            it.t < y - 0.15f && it.t > y - 1.45f && it.b > y - 0.05f &&
+                (if (dir > 0f) it.l in x..(x + 0.95f) else it.r in (x - 0.95f)..x)
+        }
         // A slot whose ceiling is too low to walk under.
         val lowSlot = solids.any {
             it.b < y - 0.25f && it.b > y - 1.70f && it.t < y - 1.6f &&
@@ -65,17 +75,36 @@ class Bot(private val session: GameSession, private val dir: Float = 1f) {
         // exactly how a real player fails these gaps.
         // Directional: a jump taken while still reversing wastes the run-up.
         val fast = player.vx * dir > 3.6f * player.speedScale
-        val crouch = lowSlot || stalled > 0.7f
+        // Crouching is tried only after jumping has been given a fair go. The
+        // other order deadlocks: a jump needs a standing body, so a bot that
+        // crouches the moment it is blocked can never hop the thing blocking it.
+        val crouch = !stepBlocking && (lowSlot || (stalled > 0.7f && jumpAttempts >= 2))
         jumpCooldown -= dt
-        val wantJump = player.onGround && !crouch && jumpCooldown <= 0f &&
+        val wantJump = player.onGround && !crouch && !player.crouching && jumpCooldown <= 0f &&
             ((climb && fast && (edgeDistance < 0.55f || stepAhead)) || stalled > 0.15f)
-        if (wantJump) jumpCooldown = 0.25f
+        if (wantJump) {
+            jumpCooldown = 0.35f
+            jumpAttempts++
+        }
+        if (moving) jumpAttempts = 0
 
         val label = session.focusLabel
         val allowed = interactLabels?.contains(label) ?: label.isNotEmpty()
         val interact = useInteract && label.isNotEmpty() && allowed
 
-        session.update(dt, dir, crouch, wantJump, interact)
+        // The hand: fire when something is in range, then hold, because most
+        // anchors need the strain held on them to give.
+        var grab = false
+        var hold = false
+        if (useReach && session.reach.unlocked) {
+            if (session.reach.busy) {
+                hold = true
+            } else if (session.reach.ready && session.reach.pick(session) != null) {
+                grab = true
+                hold = true
+            }
+        }
+        session.update(dt, dir, crouch, wantJump, interact, false, grab, hold)
         return dt
     }
 
