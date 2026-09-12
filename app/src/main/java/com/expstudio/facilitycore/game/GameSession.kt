@@ -122,6 +122,17 @@ class GameSession(
     val solidScratch = ArrayList<Box>(64)
     private var exitCooldown = 0f
     private var blockedTime = 0f
+
+    // ---- dynamic audio ---------------------------------------------------
+    /**
+     * 0 = safe, 1 = something is right behind you. Drives the heartbeat rate,
+     * the breathing and how often the room makes a noise of its own.
+     */
+    var tension = 0f
+        private set
+    private var heartTimer = 0f
+    private var breathTimer = 0f
+    private var ambientTimer = 6f
     /** Set by the script when the return vent's floor gives way. */
     var ventFloorBroken = false
 
@@ -215,10 +226,18 @@ class GameSession(
         lines.addLast(Line(text, blocking, hold))
     }
 
-    /** Starts a cutscene: freezes the player and resets the beat clock. */
+    /**
+     * Starts a cutscene: freezes the player and resets the beat clock.
+     *
+     * The scene progress is reset here too. Chapter 2's opening and its finale
+     * share one progress value, and without this the finale began already at
+     * 1.0 — the smelter played its whole fall in a single frame and cut to
+     * black the instant the player stepped through the hatch.
+     */
     fun beginCut(next: Cut) {
         cut = next
         cutTime = 0f
+        endingProgressCh2 = 0f
         player.controlEnabled = false
     }
 
@@ -300,7 +319,10 @@ class GameSession(
 
         if (player.stepEvent) {
             player.stepEvent = false
-            if (!player.crouching) audio.play(Sfx.Id.THUD, 0.16f)
+            // Slight pitch variation stops a run sounding like a metronome.
+            if (!player.crouching) {
+                audio.playPitched(Sfx.Id.STEP, 0.30f, 0.92f + (time * 7f % 0.16f))
+            }
         }
 
         for (p in room.props) p.update(this, dt)
@@ -309,6 +331,7 @@ class GameSession(
         player.hasPack = hasKeyPack
 
         if (exitCooldown > 0f) exitCooldown -= dt
+        updateTension(dt)
         updateCrouchHint(dt, moveX, crouch)
         updateInteraction(interactPressed)
         if (cut == Cut.NONE) checkExits()
@@ -393,6 +416,62 @@ class GameSession(
         if (pressed && best != null) {
             onHaptic?.invoke(12)
             best.onInteract(this)
+        }
+    }
+
+    /**
+     * The audio side of dread. Nothing here is music: it is a heartbeat that
+     * gets faster as things get worse, breathing that shows up when they are
+     * already bad, and a room that occasionally makes a noise on its own.
+     */
+    private fun updateTension(dt: Float) {
+        val target = when {
+            cut == Cut.DEATH -> 1f
+            stage == chaseStageValue -> 0.55f + 0.45f * (chaseTime / script.chaseSeconds).coerceIn(0f, 1f)
+            monster.mode == Monster.Mode.ATTACKING -> 0.75f
+            monster.mode == Monster.Mode.ALERTED || monster.mode == Monster.Mode.LURKING -> 0.6f
+            maxHealth > 0 -> 0.5f
+            room.needsPower && !subfloorPowered -> 0.22f
+            else -> 0.08f
+        }
+        // Rises fast, falls slowly: fear outlasts the thing that caused it.
+        val rate = if (target > tension) 2.2f else 0.35f
+        tension += (target - tension).coerceIn(-rate * dt, rate * dt)
+
+        if (tension > 0.25f) {
+            heartTimer -= dt
+            if (heartTimer <= 0f) {
+                // 54 bpm at rest, 160 when it is on top of you.
+                val bpm = MathX.lerp(54f, 160f, tension)
+                heartTimer = 60f / bpm
+                audio.playPitched(Sfx.Id.HEARTBEAT, 0.16f + 0.5f * tension, 0.85f + 0.4f * tension)
+            }
+        } else {
+            heartTimer = 0f
+        }
+
+        if (tension > 0.62f) {
+            breathTimer -= dt
+            if (breathTimer <= 0f) {
+                breathTimer = MathX.lerp(3.4f, 1.5f, tension)
+                audio.play(Sfx.Id.BREATH, 0.22f + 0.3f * tension)
+            }
+        } else {
+            breathTimer = 0.6f
+        }
+
+        // The facility settling, dripping, or something further in.
+        ambientTimer -= dt
+        if (ambientTimer <= 0f) {
+            ambientTimer = 7f + (time * 13f % 11f)
+            val roll = (time * 97f).toInt() % 100
+            when {
+                roll < 34 -> audio.playPitched(Sfx.Id.DRIP, 0.22f, 0.8f + (roll % 7) * 0.06f)
+                roll < 62 -> audio.play(Sfx.Id.GROAN, 0.26f)
+                roll < 80 -> audio.playPitched(Sfx.Id.CLANK, 0.14f, 0.7f + (roll % 5) * 0.08f)
+                tension > 0.3f -> audio.play(Sfx.Id.WHISPER, 0.30f)
+                else -> audio.play(Sfx.Id.DRIP, 0.14f)
+            }
         }
     }
 
@@ -493,6 +572,7 @@ class GameSession(
         audio.play(Sfx.Id.THUD)
         onHaptic?.invoke(90)
         particles.sparkBurst(player.x, player.y - player.height * 0.5f, 16, 1.6f, 5f, Palette.BAD)
+        audio.play(Sfx.Id.SNARL, 0.8f)
         player.vx = fromFacing * 7.5f
         player.vy = -3.5f
         health--
@@ -520,6 +600,7 @@ class GameSession(
 
     /** Begins a timed pursuit; [chaseStage] is the chapter's own chase stage. */
     fun startChase(chaseStage: Int) {
+        audio.play(Sfx.Id.RISER, 0.85f)
         setStage(chaseStage)
         chaseStageValue = chaseStage
         chaseTime = 0f
@@ -559,7 +640,7 @@ class GameSession(
         for (r in level.rooms.values) {
             (r.props.firstOrNull { it is Door && it.name == shutterName } as? Door)?.forceClose()
         }
-        audio.play(Sfx.Id.RUMBLE)
+        audio.play(Sfx.Id.SHUTTER, 0.95f)
         camera.shake(0.3f, 0.8f)
         onHaptic?.invoke(50)
         say("The bulkhead. It's on the other side of it.")
@@ -574,6 +655,7 @@ class GameSession(
         pendingRespawn = true
         player.controlEnabled = false
         player.speedScale = 1f
+        audio.play(Sfx.Id.STINGER)
         audio.play(Sfx.Id.SCREAM)
         camera.shake(0.6f, 0.5f)
         onHaptic?.invoke(200)
@@ -678,7 +760,7 @@ class GameSession(
 
     fun onCubeInserted(socket: CubeSocket) {
         carriedCube = null
-        audio.play(Sfx.Id.CONFIRM)
+        audio.play(Sfx.Id.CUBE_SEAT)
         camera.shake(0.12f, 0.5f)
         particles.sparkBurst(socket.box.cx, socket.box.cy, 18, 1.4f, 5f, Palette.ACCENT)
         script.onCubeInserted(this, socket)
@@ -713,6 +795,7 @@ class GameSession(
         sc.drawMid(c, d, camera)
         sc.drawNear(c, d, camera)
 
+        sc.drawMarks(c, d, camera, amb)
         for (dec in room.decor) drawDecor(c, d, dec)
         for (s in room.solids) drawSolid(c, d, s)
         drawFloorSheen(c, d, amb)

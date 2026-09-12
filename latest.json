@@ -20,7 +20,7 @@
   "sha256": "cb29e35c759c010e080343a45050efd2acb218c75cd9ffbc0ead6928e154c5ad",
   "releasedAt": "2026-09-12",
   "minAndroid": "7.0 (API 24)",
-  "apkUrl": "https://raw.githubusercontent.com/Expstudiooficial/facility-core-releases/main/facility-core.apk",
-  "latestUrl": "https://raw.githubusercontent.com/Expstudiooficial/facility-core-releases/main/latest.json",
-  "notes": "Installs over any earlier build and keeps every world. Every release is signed with one key so updates never need an uninstall. This manifest and the APK live in the public facility-core-releases repository; the game's source and its signing key stay private."
+  "apkUrl": "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/main/dist/facility-core.apk",
+  "latestUrl": "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/main/latest.json",
+  "notes": "Installs over any earlier build and keeps every world. Every release is signed with the same key so updates never need an uninstall."
 }

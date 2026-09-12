@@ -261,6 +261,38 @@ class Chapter2Test {
     }
 
     @Test
+    fun theSmelterFinaleActuallyPlays() {
+        // The opening and the finale share a progress value. If it is not reset
+        // the finale starts at 1.0 and the whole fall happens in one frame.
+        val g = session(Stage2.SMELTER_DOOR)
+        // Run the opening first so the shared value is dirty, exactly as it is
+        // by the time a real player reaches the smelter.
+        g.beginCut(Cut.CH2_OPENING)
+        var t = 0f
+        while (t < 14f && g.cut == Cut.CH2_OPENING) {
+            g.update(dt, 0f, false, false, false)
+            t += dt
+        }
+
+        val bot = Bot(g, 1f).apply { interactLabels = setOf("GRAB", "THROW", "OPEN") }
+        bot.runFor(140f, until = { g.cut == Cut.SMELTER_END })
+        assertTrue("the finale never started (stage=${g.stage}, room=${g.roomId()})", g.cut == Cut.SMELTER_END)
+        assertTrue(
+            "the finale began already finished (progress=${g.endingProgressCh2})",
+            g.endingProgressCh2 < 0.1f
+        )
+
+        // And it has to take real time on screen, not a single frame.
+        var frames = 0
+        while (frames < 60 * 30 && g.endingProgressCh2 < 0.99f) {
+            g.update(dt, 0f, false, false, false)
+            frames++
+        }
+        val seconds = frames / 60f
+        assertTrue("the finale played in ${seconds}s — too fast to see", seconds > 5f)
+    }
+
+    @Test
     fun everyCubeHasASocketToGoIn() {
         // A cube consumed with no socket left to fill would be a dead end.
         for (stage in 0..Stage2.COMPLETE) {

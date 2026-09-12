@@ -55,8 +55,6 @@ object Chapter1 {
         // Collapsed entry doors behind the player: there is no going back.
         solid(1.4f, -7f, 0.6f, 7f)
         decorBox(1.0f, -6.0f, 1.4f, 4.2f, Palette.WALL_LIT, Decor.Kind.PANEL)
-        props.add(Sign(Box.of(3.2f, -4.6f, 3.4f, 0.7f), "FACILITY CORE", Palette.ACCENT))
-        props.add(Sign(Box.of(3.6f, -3.7f, 2.6f, 0.5f), "SUBFLOOR ACCESS", Palette.TEXT_DIM))
         solid(9f, -0.9f, 1.6f, 0.9f, Solid.Kind.CRATE)
         solid(10.8f, -1.5f, 1.1f, 1.5f, Solid.Kind.CRATE)
         decorBox(16f, -6.6f, 2.6f, 0.3f, Palette.TRIM, Decor.Kind.PIPE)
@@ -69,7 +67,6 @@ object Chapter1 {
         shell(openLeft = true)
         decorBox(0f, -0.4f, 32f, 0.4f, Palette.WALL_LIT, Decor.Kind.STRIPE)
         props.add(BreakerPanel(Box.of(6f, -3.1f, 1.6f, 1.9f), "gate_lobby"))
-        props.add(Sign(Box.of(5.2f, -4.0f, 3.2f, 0.55f), "INTAKE BREAKERS", Palette.WARN))
 
         // Optional scenery to climb; the way on is along the floor.
         solid(13f, -1.1f, 2.2f, 1.1f, Solid.Kind.CRATE)
@@ -78,7 +75,6 @@ object Chapter1 {
         decorBox(2f, -8.4f, 10f, 0.3f, Palette.TRIM, Decor.Kind.PIPE)
         decorBox(9f, -8.4f, 0.9f, 0.6f, Palette.WARN, Decor.Kind.LIGHT).lit = true
         decorBox(22f, -8.4f, 0.9f, 0.6f, Palette.WARN, Decor.Kind.LIGHT)
-        props.add(Sign(Box.of(26.4f, -4.2f, 3.0f, 0.55f), "JUNCTION ->", Palette.TEXT_DIM))
 
         val gate = Door(Box.of(30f, -3.2f, 0.7f, 3.2f), "gate_lobby")
         gate.locked = true
@@ -95,8 +91,6 @@ object Chapter1 {
         solid(15.2f, -3.4f, 2.4f, 0.3f, Solid.Kind.PLATFORM)
         solid(19.0f, -4.5f, 7.5f, 0.3f, Solid.Kind.PLATFORM)
 
-        props.add(Sign(Box.of(21.0f, -5.6f, 3.6f, 0.6f), "SUBFLOOR 0 ->", Palette.ACCENT))
-        props.add(Sign(Box.of(21.4f, -1.6f, 3.4f, 0.55f), "STORAGE BAY ->", Palette.TEXT_DIM))
 
         val main = Door(Box.of(24.6f, -7.9f, 0.8f, 3.4f), "door_main")
         main.locked = true
@@ -123,7 +117,6 @@ object Chapter1 {
         decorBox(16f, -7.4f, 0.9f, 0.6f, Palette.WARN, Decor.Kind.LIGHT).lit = true
 
         props.add(KeyPackItem(Box.of(14.1f, -1.55f, 0.9f, 0.5f)))
-        props.add(Sign(Box.of(11.8f, -2.6f, 3.0f, 0.5f), "TECH BENCH", Palette.TEXT_DIM))
     }
 
     private fun buildHub(): Room = room("hub", "Feeder Hub", 28f, 8f, needsPower = true).apply {
@@ -134,7 +127,6 @@ object Chapter1 {
         decorBox(2f, -7.9f, 12f, 0.3f, Palette.TRIM, Decor.Kind.PIPE)
         decorBox(6f, -7.9f, 0.9f, 0.6f, Palette.WARN, Decor.Kind.LIGHT)
         decorBox(20f, -7.9f, 0.9f, 0.6f, Palette.WARN, Decor.Kind.LIGHT)
-        props.add(Sign(Box.of(3.0f, -3.2f, 3.6f, 0.55f), "SUBFLOOR 0 — DEAD", Palette.BAD))
         props.add(CableCoil(Box.of(18.3f, -0.7f, 0.7f, 0.7f), "cable_main"))
     }
 
@@ -148,7 +140,6 @@ object Chapter1 {
 
         // Mounted high on purpose: the cable has to be thrown, not carried up.
         props.add(ConnectionStation(Box.of(15.4f, -4.6f, 2.2f, 1.2f), "st_main"))
-        props.add(Sign(Box.of(14.4f, -5.6f, 4.0f, 0.6f), "FEEDER MAIN", Palette.WARN))
 
         val door = Door(Box.of(24.9f, -3.4f, 0.8f, 3.4f), "door_power")
         door.locked = true
@@ -162,7 +153,6 @@ object Chapter1 {
         shell(openLeft = true, openRight = true)
         decorBox(0f, -0.4f, 22f, 0.4f, Palette.WALL_LIT, Decor.Kind.STRIPE)
         props.add(Elevator(Box.of(2.2f, -4.1f, 2.6f, 4.1f)))
-        props.add(Sign(Box.of(7.4f, -5.4f, 3.0f, 0.6f), "ARCHIVE ->", Palette.TEXT_DIM))
         solid(12f, -1.2f, 2.2f, 1.2f, Solid.Kind.CRATE)
         decorBox(9f, -9.4f, 12f, 0.3f, Palette.TRIM, Decor.Kind.PIPE)
         // The duct the player later falls out of.
@@ -180,7 +170,6 @@ object Chapter1 {
             x += 4.2f
         }
         decorBox(2f, -8.4f, 26f, 0.28f, Palette.TRIM, Decor.Kind.PIPE)
-        props.add(Sign(Box.of(2.4f, -4.4f, 3.0f, 0.55f), "ARCHIVE", Palette.ACCENT))
     }
 
     private fun buildMaze1(): Room = room("maze1", "Service Run A", 14f, 8.5f, needsPower = true).apply {
@@ -201,7 +190,6 @@ object Chapter1 {
         solid(6.2f, -8.5f, 3.0f, 7.45f)
         decorBox(6.2f, -1.32f, 3.0f, 0.27f, Palette.WARN, Decor.Kind.STRIPE)
         decorBox(6.2f, -1.05f, 3.0f, 0.10f, Palette.WARN, Decor.Kind.GRATE)
-        props.add(Sign(Box.of(6.0f, -2.5f, 3.4f, 0.6f), "CRAWL SPACE", Palette.WARN))
         solid(10.6f, -1.1f, 1.6f, 1.1f, Solid.Kind.CRATE)
         solid(12.4f, -2.1f, 1.6f, 0.3f, Solid.Kind.PLATFORM)
         decorBox(1f, -8.4f, 4.5f, 0.28f, Palette.TRIM, Decor.Kind.PIPE)
@@ -212,7 +200,6 @@ object Chapter1 {
         decorBox(0f, -0.4f, 20f, 0.4f, Palette.WALL_LIT, Decor.Kind.STRIPE)
         props.add(CableCoil(Box.of(11.0f, -0.7f, 0.7f, 0.7f), "cable_chase"))
         props.add(ConnectionStation(Box.of(13.2f, -3.9f, 2.0f, 1.1f), "st_chase"))
-        props.add(Sign(Box.of(12.7f, -4.9f, 3.0f, 0.55f), "BULKHEAD FEED", Palette.WARN))
 
         // Shutter that slams shut behind the player once the feed is live.
         val shutter = Door(Box.of(8.4f, -8.5f, 0.9f, 8.5f), "shutter")
@@ -238,7 +225,6 @@ object Chapter1 {
         props.add(ConnectionStation(Box.of(6.8f, -4.9f, 2.0f, 1.1f), "st_c1", yieldsShard = true))
         props.add(ConnectionStation(Box.of(21.4f, -4.9f, 2.0f, 1.1f), "st_c2", yieldsShard = true))
         props.add(ArchivePanel(Box.of(13.6f, -3.6f, 2.8f, 2.4f)))
-        props.add(Sign(Box.of(13.4f, -4.5f, 3.2f, 0.6f), "ARCHIVE WRITE", Palette.ACCENT))
 
         // Duct mouth: the 1.4 m slot can only be entered crouched.
         solid(28f, -9f, 2f, 7.6f)

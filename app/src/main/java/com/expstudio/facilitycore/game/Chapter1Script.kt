@@ -109,7 +109,8 @@ class Chapter1Script : ChapterScript() {
             Cut.VENT_SWIPE -> {
                 if (g.cutTime > 0.75f && !g.ventFloorBroken) {
                     g.ventFloorBroken = true
-                    g.playSound(Sfx.Id.THUD)
+                    g.playSound(Sfx.Id.DEBRIS)
+                    g.playSound(Sfx.Id.IMPACT, 0.8f)
                     g.camera.shake(0.35f, 0.7f)
                     g.particles.debris(g.player.x, g.player.y, 16, 5f, com.expstudio.facilitycore.core.Palette.TRIM)
                 }

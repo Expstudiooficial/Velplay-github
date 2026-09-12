@@ -142,8 +142,6 @@ object Chapter2 {
         decorBox(3f, -8.9f, 12f, 0.28f, Palette.TRIM, Decor.Kind.PIPE)
         decorBox(6f, -8.9f, 0.9f, 0.6f, Palette.WARN, Decor.Kind.LIGHT).lit = true
         decorBox(18f, -8.9f, 0.9f, 0.6f, Palette.WARN, Decor.Kind.LIGHT)
-        props.add(Sign(Box.of(2.0f, -4.6f, 3.6f, 0.7f), "SUBFLOOR 1", Palette.ACCENT))
-        props.add(Sign(Box.of(19.5f, -3.0f, 3.4f, 0.55f), "CELLS ->", Palette.TEXT_DIM))
         solid(11f, -1.1f, 2.2f, 1.1f, Solid.Kind.CRATE)
         solid(14.6f, -2.2f, 2.6f, 0.3f, Solid.Kind.PLATFORM)
     }
@@ -159,14 +157,12 @@ object Chapter2 {
         solid(10.0f, -1.1f, 1.6f, 1.1f, Solid.Kind.CRATE)
         solid(14f, -1.2f, 5.0f, 0.25f, Solid.Kind.PLATFORM)
         props.add(PowerCube(Box.of(15.6f, -1.75f, 0.55f, 0.55f), "cube_a"))
-        props.add(Sign(Box.of(13.6f, -2.6f, 3.2f, 0.55f), "CELL RACK", Palette.TEXT_DIM))
     }
 
     private fun buildGate(): Room = room("gate", "Inner Gate", 20f, 8.5f).apply {
         shell(openLeft = true)
         decorBox(0f, -0.4f, 20f, 0.4f, Palette.WALL_LIT, Decor.Kind.STRIPE)
         props.add(CubeSocket(Box.of(15.2f, -2.4f, 0.9f, 0.9f), "sock_gate", "door_gate"))
-        props.add(Sign(Box.of(14.0f, -3.4f, 3.4f, 0.55f), "GATE POWER", Palette.WARN))
         val door = Door(Box.of(18.8f, -3.4f, 0.8f, 3.4f), "door_gate")
         door.locked = true
         door.manual = false
@@ -188,7 +184,6 @@ object Chapter2 {
         }
         solid(12f, -1.1f, 2.0f, 1.1f, Solid.Kind.CRATE)
         props.add(BreakableDoor(Box.of(25.4f, -4.0f, 1.0f, 4.0f), "door_hall"))
-        props.add(Sign(Box.of(2.2f, -4.8f, 3.0f, 0.55f), "HOLDING", Palette.TEXT_DIM))
     }
 
     private fun buildMazeA(): Room = room("maze_a", "Service Loop A", 16f, 8.5f).apply {
@@ -207,7 +202,6 @@ object Chapter2 {
         solid(6.4f, -8.5f, 3.0f, 7.45f)
         decorBox(6.4f, -1.32f, 3.0f, 0.27f, Palette.WARN, Decor.Kind.STRIPE)
         decorBox(6.4f, -1.05f, 3.0f, 0.10f, Palette.WARN, Decor.Kind.GRATE)
-        props.add(Sign(Box.of(6.2f, -2.5f, 3.4f, 0.6f), "CRAWL SPACE", Palette.WARN))
         solid(11.4f, -1.1f, 1.7f, 1.1f, Solid.Kind.CRATE)
     }
 
@@ -217,7 +211,6 @@ object Chapter2 {
         decorBox(9f, -8.9f, 8f, 0.3f, Palette.TRIM, Decor.Kind.PIPE)
         props.add(Grabbers(Box.of(12.4f, -8.6f, 2.4f, 5.6f)))
         props.add(KeySwitch(Box.of(16.4f, -2.6f, 1.0f, 1.0f), "sw_hoist", "HOIST"))
-        props.add(Sign(Box.of(15.2f, -3.6f, 3.4f, 0.55f), "HOIST CONTROL", Palette.ACCENT))
         solid(5f, -1.1f, 1.8f, 1.1f, Solid.Kind.CRATE)
 
         // Sealed until the hoist has done its job: without this the whole
@@ -239,7 +232,6 @@ object Chapter2 {
         // runtime vanished from any save taken after it was collected, leaving
         // the spine socket with nothing to fill it.
         props.add(PowerCube(Box.of(9.6f, -1.5f, 0.55f, 0.55f), "cube_b").apply { consumed = true })
-        props.add(Sign(Box.of(8.2f, -5.6f, 3.8f, 0.6f), "CELL CHARGER", Palette.WARN))
         solid(14f, -1.1f, 2.0f, 1.1f, Solid.Kind.CRATE)
         solid(18f, -2.2f, 2.6f, 0.3f, Solid.Kind.PLATFORM)
     }
@@ -253,7 +245,6 @@ object Chapter2 {
         door.manual = false
         props.add(door)
         solid(7f, -1.1f, 2.0f, 1.1f, Solid.Kind.CRATE)
-        props.add(Sign(Box.of(13.8f, -3.4f, 3.4f, 0.55f), "SPINE LOCK", Palette.ACCENT))
     }
 
     private fun buildShade(): Room = room("shade", "Coolant Walk", 26f, 8.5f).apply {
@@ -281,7 +272,6 @@ object Chapter2 {
         solid(5.8f, -8.5f, 2.6f, 7.45f)
         decorBox(5.8f, -1.32f, 2.6f, 0.27f, Palette.WARN, Decor.Kind.STRIPE)
         decorBox(5.8f, -1.05f, 2.6f, 0.10f, Palette.WARN, Decor.Kind.GRATE)
-        props.add(Sign(Box.of(5.6f, -2.5f, 3.2f, 0.6f), "CRAWL SPACE", Palette.WARN))
         solid(10.6f, -1.1f, 1.7f, 1.1f, Solid.Kind.CRATE)
     }
 
@@ -289,13 +279,11 @@ object Chapter2 {
     private fun buildDeadEnd(): Room = room("deadend", "Sealed Cell", 18f, 8.5f).apply {
         shell(openLeft = true)
         decorBox(0f, -0.4f, 18f, 0.4f, Palette.WALL_LIT, Decor.Kind.STRIPE)
-        props.add(Sign(Box.of(6.0f, -5.0f, 5.0f, 0.7f), "NO EXIT", Palette.BAD))
         solid(9f, -1.1f, 2.0f, 1.1f, Solid.Kind.CRATE)
         // Duct mouth: a 1.4 m slot that can only be entered crouched.
         solid(16f, -8.5f, 2f, 7.1f)
         decorBox(16f, -1.46f, 2f, 0.16f, Palette.WALL_LIT, Decor.Kind.GRATE)
         decorBox(16f, -1.72f, 2f, 0.26f, Palette.WARN, Decor.Kind.STRIPE)
-        props.add(Sign(Box.of(13.4f, -2.7f, 3.4f, 0.6f), "CRAWL SPACE", Palette.WARN))
     }
 
     /**
@@ -316,7 +304,6 @@ object Chapter2 {
 
         props.add(CableCoil(Box.of(20.4f, -0.7f, 0.7f, 0.7f), "cable_v"))
         props.add(ConnectionStation(Box.of(23.4f, -4.2f, 2.2f, 1.2f), "st_vent"))
-        props.add(Sign(Box.of(22.6f, -5.2f, 3.8f, 0.6f), "SMELTER FEED", Palette.WARN))
 
         // The pour below, seen through the gantry grating.
         props.add(Smelter(Box.of(19.5f, 0.55f, 10f, 2.2f)))
@@ -335,7 +322,6 @@ object Chapter2 {
         decorBox(9f, -7.9f, 0.9f, 0.6f, Palette.ACCENT, Decor.Kind.LIGHT).lit = true
         // The observation window the fall is watched through.
         decorBox(4f, -5.4f, 11f, 3.0f, Palette.withAlpha(Smelter.LAVA_GLOW, 0.16f), Decor.Kind.PANEL)
-        props.add(Sign(Box.of(6.0f, -6.2f, 6.6f, 0.7f), "POUR CONTROL", Palette.ACCENT))
         solid(15f, -1.1f, 2.0f, 1.1f, Solid.Kind.CRATE)
     }
 

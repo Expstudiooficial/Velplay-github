@@ -398,13 +398,3 @@ class Elevator(box: Box) : Prop(box) {
     }
 }
 
-/** Purely narrative prop: a sign, a terminal, a corpse of a workstation. */
-class Sign(box: Box, private val label: String, private val tint: Int = Palette.TEXT_DIM) : Prop(box) {
-    override fun draw(c: Canvas, d: Draw, cam: Camera, g: GameSession) {
-        val l = cam.sx(box.l); val r = cam.sx(box.r)
-        val t = cam.sy(box.t); val b = cam.sy(box.b)
-        d.round(c, l, t, r, b, cam.s(0.04f), Palette.withAlpha(Palette.VOID, 0.55f))
-        d.roundStroke(c, l, t, r, b, cam.s(0.04f), Palette.withAlpha(tint, 0.55f), 2f)
-        d.textCentered(c, label, (l + r) * 0.5f, (t + b) * 0.5f, (b - t) * 0.55f, Palette.withAlpha(tint, 0.9f), true)
-    }
-}

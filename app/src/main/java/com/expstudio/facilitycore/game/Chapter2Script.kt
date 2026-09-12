@@ -168,7 +168,7 @@ class Chapter2Script : ChapterScript() {
                 swinging = true
                 attackPhase = 0f
                 struckThisSwing = false
-                g.playSound(Sfx.Id.RUMBLE, 0.6f)
+                g.playSound(Sfx.Id.SNARL, 0.7f)
             }
         } else {
             attackPhase += dt / SWING_SECONDS
@@ -289,8 +289,9 @@ class Chapter2Script : ChapterScript() {
                     .firstOrNull { it is BreakableDoor } as? BreakableDoor
                 if (g.cutTime > 0.7f && breakable != null && !breakable.broken) {
                     breakable.broken = true
-                    g.playSound(Sfx.Id.THUD)
+                    g.playSound(Sfx.Id.IMPACT)
                     g.playSound(Sfx.Id.SCREAM)
+                    g.playSound(Sfx.Id.DEBRIS, 0.8f)
                     g.camera.shake(0.45f, 0.9f)
                     g.onHaptic?.invoke(140)
                     g.particles.debris(breakable.box.cx, breakable.box.cy, 26, 7f, Palette.TRIM)

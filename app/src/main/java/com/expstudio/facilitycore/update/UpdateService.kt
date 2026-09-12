@@ -49,13 +49,11 @@ object UpdateService {
     /**
      * Where the update manifest lives. Kept in one place so it is easy to move.
      *
-     * This has to be readable without credentials — the app ships to phones and
-     * must not carry a token — so it points at a small public release channel
-     * rather than the game's own repository, which stays private along with the
-     * source and the signing key.
+     * Read over plain HTTPS with no credentials, because an app shipped to
+     * phones must not carry a token. The repository is public, so this resolves
+     * for anyone.
      */
-    const val MANIFEST_URL =
-        "https://raw.githubusercontent.com/Expstudiooficial/facility-core-releases/main/latest.json"
+    const val MANIFEST_URL = "https://raw.githubusercontent.com/Expstudiooficial/Velplay-github/main/latest.json"
 
     private const val TIMEOUT_MS = 15_000
 
