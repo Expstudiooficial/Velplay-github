@@ -1,14 +1,18 @@
 package com.expstudio.facilitycore
 
 import com.expstudio.facilitycore.core.Box
-import com.expstudio.facilitycore.game.Chapter3
+import com.expstudio.facilitycore.game.Chapter4
 import com.expstudio.facilitycore.game.Compose
 import com.expstudio.facilitycore.game.Door
 import com.expstudio.facilitycore.game.Player
+import com.expstudio.facilitycore.game.PullRail
 import com.expstudio.facilitycore.game.Reach
 import com.expstudio.facilitycore.game.ReachAnchor
+import com.expstudio.facilitycore.game.Carriage
+import com.expstudio.facilitycore.game.Counterweight
 import com.expstudio.facilitycore.game.Solid
-import com.expstudio.facilitycore.game.Stage3
+import com.expstudio.facilitycore.game.Updraft
+import com.expstudio.facilitycore.game.Stage4
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -17,15 +21,15 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 /**
- * Structural checks over Chapter 3.
+ * Structural checks over Chapter 4.
  *
  * Most of the chapter is composed rather than authored, so these matter more
  * here than they did for Chapters 1 and 2: a bad slot template would not be one
  * broken room, it would be thirty.
  */
-class Chapter3Test {
+class Chapter4Test {
 
-    private val level = Chapter3.build()
+    private val level = Chapter4.build()
 
     /**
      * The tallest ledge a standing jump plus a mantle gets onto: the jump apex
@@ -43,11 +47,11 @@ class Chapter3Test {
     }
 
     @Test
-    fun everyRoomIsReachableFromTheObservationDeck() {
+    fun everyRoomIsReachableFromTheCoreDeck() {
         val seen = HashSet<String>()
         val queue = ArrayDeque<String>()
-        queue.add("obs3")
-        seen.add("obs3")
+        queue.add("core4")
+        seen.add("core4")
         while (queue.isNotEmpty()) {
             val room = level.room(queue.removeFirst())
             for (exit in room.exits) if (seen.add(exit.toRoom)) queue.add(exit.toRoom)
@@ -56,8 +60,8 @@ class Chapter3Test {
         // rather than an exit, so the walk graph starts again there.
         val fromLift = HashSet<String>()
         val q2 = ArrayDeque<String>()
-        q2.add("e0")
-        fromLift.add("e0")
+        q2.add("h0")
+        fromLift.add("h0")
         while (q2.isNotEmpty()) {
             val room = level.room(q2.removeFirst())
             for (exit in room.exits) if (fromLift.add(exit.toRoom)) q2.add(exit.toRoom)
@@ -91,8 +95,8 @@ class Chapter3Test {
 
     @Test
     fun checkpointSpawnsAreNotInsideGeometry() {
-        for (stage in 0..Stage3.COMPLETE) {
-            val (roomId, x, y) = Chapter3.spawnFor(stage)
+        for (stage in 0..Stage4.COMPLETE) {
+            val (roomId, x, y) = Chapter4.spawnFor(stage)
             val room = level.rooms[roomId]
             assertNotNull("stage $stage spawns into unknown room '$roomId'", room)
             val box = Box(
@@ -139,6 +143,23 @@ class Chapter3Test {
         for (room in level.rooms.values) {
             for (s in room.solids) {
                 if (s.kind == Solid.Kind.STRUCTURE) continue
+                // Chapter 4 has three ways onto a ledge that are not a jump, and
+                // all of them are the point of the room they are in: a column of
+                // moving air under it, a carriage that runs to it, and a bar.
+                if (room.props.any { p ->
+                    when (p) {
+                        // A carriage serves everything along its run, not just
+                        // wherever it happens to be parked at build time.
+                        is Carriage -> maxOf(p.fromX, p.toX) + (p.box.r - p.box.l) >= s.box.l - 1.5f &&
+                            minOf(p.fromX, p.toX) <= s.box.r + 1.5f
+                        is Updraft -> p.box.r >= s.box.l - 1.5f && p.box.l <= s.box.r + 1.5f
+                        // A counterweight is a lift: it serves whatever it rises to.
+                        is Counterweight -> p.box.r >= s.box.l - 2.0f && p.box.l <= s.box.r + 2.0f
+                        // A rail delivers you to its far end, not to itself.
+                        is PullRail -> p.toX >= s.box.l - 2.0f && p.toX <= s.box.r + 2.0f
+                        else -> false
+                    }
+                }) continue
                 // A ledge with a bar on it is meant to be out of jump range —
                 // that is the whole reason the hand exists.
                 if (room.props.any { it is ReachAnchor && it.kind == ReachAnchor.Kind.BAR &&
@@ -150,15 +171,19 @@ class Chapter3Test {
                 // box 1 m under it is fine even though the floor is also "below".
                 var best = Float.POSITIVE_INFINITY
                 if (s.box.t < 0f) best = 0f
-                for (other in room.solids) {
-                    if (other === s) continue
-                    val top = other.box.t
+                // Chapter 4's supports are often props rather than level solids
+                // — a deck that falls, a carriage on a rail — and they hold
+                // weight exactly the same way.
+                val supports = room.solids.map { it.box } + room.props.mapNotNull { it.solid }
+                for (other in supports) {
+                    if (other === s.box) continue
+                    val top = other.t
                     // At or below. A neighbour at the same height is walked
                     // onto, not climbed, and skipping those made a flat run of
                     // decks look like an unreachable ledge.
                     if (top < s.box.t) continue
-                    if (other.box.r < s.box.l - Compose.MAX_GAP) continue
-                    if (other.box.l > s.box.r + Compose.MAX_GAP) continue
+                    if (other.r < s.box.l - Compose.MAX_GAP) continue
+                    if (other.l > s.box.r + Compose.MAX_GAP) continue
                     if (top < best) best = top
                 }
                 val climb = best - s.box.t
@@ -268,14 +293,14 @@ class Chapter3Test {
     @Test
     fun theChapterIsAsLongAsItWasSpecified() {
         val count = level.rooms.size
-        assertTrue("Chapter 3 has only $count rooms", count >= 80)
-        assertTrue("Chapter 3 has $count rooms, which is more than intended", count <= 115)
+        assertTrue("Chapter 4 has only $count rooms", count >= 70)
+        assertTrue("Chapter 4 has $count rooms, which is more than intended", count <= 95)
     }
 
     @Test
     fun composedRoomsAreDeterministic() {
-        val a = Chapter3.build()
-        val b = Chapter3.build()
+        val a = Chapter4.build()
+        val b = Chapter4.build()
         for (id in a.rooms.keys) {
             val ra = a.room(id)
             val rb = b.room(id)

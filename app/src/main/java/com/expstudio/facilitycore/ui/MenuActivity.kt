@@ -19,6 +19,7 @@ import com.expstudio.facilitycore.core.Palette
 import com.expstudio.facilitycore.game.Stage
 import com.expstudio.facilitycore.game.Stage2
 import com.expstudio.facilitycore.game.Stage3
+import com.expstudio.facilitycore.game.Stage4
 import com.expstudio.facilitycore.save.WorldSave
 import com.expstudio.facilitycore.save.WorldStore
 import com.expstudio.facilitycore.update.UpdateService
@@ -171,12 +172,14 @@ class MenuActivity : AppCompatActivity() {
         card.addView(name)
 
         val finalStage = when {
-            world.chapter >= 3 -> Stage3.COMPLETE
+            world.chapter >= 4 -> Stage4.COMPLETE
+            world.chapter == 3 -> Stage3.COMPLETE
             world.chapter == 2 -> Stage2.COMPLETE
             else -> Stage.COMPLETE
         }
         val percent = ((world.stage.toFloat() / finalStage) * 100f).toInt().coerceIn(0, 100)
-        val objective = if (world.chapter >= 3) Stage3.objectiveFor(world.stage)
+        val objective = if (world.chapter >= 4) Stage4.objectiveFor(world.stage)
+        else if (world.chapter == 3) Stage3.objectiveFor(world.stage)
         else if (world.chapter == 2) Stage2.objectiveFor(world.stage)
         else Stage.objectiveFor(world.stage)
         val status = if (world.completed) "Complete" else "$percent% — $objective"
@@ -228,6 +231,8 @@ class MenuActivity : AppCompatActivity() {
         val ch3 = store.settings.chapter3Unlocked
         if (ch2) chapters.add("Chapter 2 — Subfloor 1")
         if (ch2 && ch3) chapters.add("Chapter 3 — The Core")
+        val ch4 = store.settings.chapter4Unlocked
+        if (ch2 && ch3 && ch4) chapters.add("Chapter 4 — Out")
         var chosenChapter = 1
 
         val wrapper = UiKit.column(this, Gravity.START)
@@ -244,6 +249,8 @@ class MenuActivity : AppCompatActivity() {
             })
             if (!ch3) {
                 wrapper.addView(UiKit.label(this, "Finish Chapter 2 to unlock Chapter 3.", 11f))
+            } else if (!ch4) {
+                wrapper.addView(UiKit.label(this, "Finish Chapter 3 to unlock Chapter 4.", 11f))
             }
         } else {
             wrapper.addView(UiKit.label(this, "Finish Chapter 1 to unlock Chapter 2.", 11f))
@@ -416,11 +423,12 @@ class MenuActivity : AppCompatActivity() {
 
         list.addView(UiKit.spacer(this, 12f))
         val unlocked = when {
+            store.settings.chapter4Unlocked -> 4
             store.settings.chapter3Unlocked -> 3
             store.settings.chapter2Unlocked -> 2
             else -> 1
         }
-        val unlock = "Chapters unlocked: 1 - $unlocked of 3"
+        val unlock = "Chapters unlocked: 1 - $unlocked of 4"
         list.addView(
             UiKit.label(this, unlock, 12f, if (unlocked > 1) Palette.GOOD else Palette.TEXT_DIM)
         )

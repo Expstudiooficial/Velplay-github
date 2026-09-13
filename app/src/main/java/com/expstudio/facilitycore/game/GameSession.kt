@@ -21,7 +21,9 @@ enum class Cut {
     // Chapter 2.
     CH2_OPENING, CH2_FIGHT_INTRO, DOOR_BREAK, GRABBED, HOISTED, SMELTER_END,
     // Chapter 3.
-    CH3_LAVA, CH3_LIFT, CH3_STUCK, CH3_IGNITE, CH3_BOSS_IN, CH3_ENDING
+    CH3_LAVA, CH3_LIFT, CH3_STUCK, CH3_IGNITE, CH3_BOSS_IN, CH3_ENDING,
+    // Chapter 4.
+    CH4_CORE, CH4_LIFT, CH4_ASCENT
 }
 
 /**
@@ -92,6 +94,9 @@ class GameSession(
 
     /** Chapter 3's closing shot. */
     var endingProgressCh3 = 0f
+
+    /** Chapter 4's, which is the only one that ends well. */
+    var endingProgressCh4 = 0f
 
     /** Health, used by set-piece fights. maxHealth of 0 hides the pips. */
     var maxHealth = 0
@@ -213,6 +218,7 @@ class GameSession(
         endingProgress = 0f
         endingProgressCh2 = 0f
         endingProgressCh3 = 0f
+        endingProgressCh4 = 0f
         hurtFlash = 0f
         invulnerable = 0f
         maxHealth = 0
@@ -279,6 +285,7 @@ class GameSession(
         cutTime = 0f
         endingProgressCh2 = 0f
         endingProgressCh3 = 0f
+        endingProgressCh4 = 0f
         player.controlEnabled = false
     }
 
@@ -757,6 +764,25 @@ class GameSession(
     fun onArchiveCoreTaken() = script.onArchiveCoreTaken(this)
     fun onEmitterArmed(emitter: LaserEmitter) = script.onEmitterArmed(this, emitter)
     fun onSuperDatabaseTaken() = script.onSuperDatabaseTaken(this)
+    fun onSlapSwitch(sw: SlapSwitch) = script.onSlapSwitch(this, sw)
+    fun onCompanionFound(who: Ren) = script.onCompanionFound(this, who)
+
+    /**
+     * True when every mechanism in [group] in this room is satisfied.
+     *
+     * Mechanisms read the world rather than being told about it, so this is all
+     * the wiring a mechanical puzzle needs: no registration, no ordering, and a
+     * crate hauled onto a plate counts exactly as much as a player stood on it.
+     */
+    fun groupSatisfied(group: String): Boolean {
+        var found = false
+        for (p in room.props) {
+            if (p !is Mechanism || p.group != group) continue
+            found = true
+            if (!p.satisfied()) return false
+        }
+        return found
+    }
 
     fun onBreakersSolved(gateId: String) {
         val gate = room.props.firstOrNull { it is Door && it.name == gateId } as? Door

@@ -59,10 +59,13 @@ abstract class ChapterScript {
     open fun onArchiveCoreTaken(g: GameSession) {}
     open fun onEmitterArmed(g: GameSession, emitter: LaserEmitter) {}
     open fun onSuperDatabaseTaken(g: GameSession) {}
+    open fun onSlapSwitch(g: GameSession, sw: SlapSwitch) {}
+    open fun onCompanionFound(g: GameSession, who: Ren) {}
 
     companion object {
         fun forChapter(chapter: Int): ChapterScript = when {
-            chapter >= 3 -> Chapter3Script()
+            chapter >= 4 -> Chapter4Script()
+            chapter == 3 -> Chapter3Script()
             chapter == 2 -> Chapter2Script()
             else -> Chapter1Script()
         }

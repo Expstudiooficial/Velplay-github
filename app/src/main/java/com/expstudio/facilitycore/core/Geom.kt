@@ -59,10 +59,18 @@ object MathX {
     fun clamp(v: Int, lo: Int, hi: Int): Int = if (v < lo) lo else if (v > hi) hi else v
     fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * clamp(t, 0f, 1f)
 
-    /** Frame-rate independent exponential approach; [rate] is the fraction closed per second. */
+    /**
+     * Frame-rate independent exponential approach. [rate] is per second: the
+     * gap closes by 1/e every 1/rate seconds, so 1 is leisurely and 8 is snappy.
+     *
+     * It used to read [rate] as a per-frame lerp factor and clamp it below one,
+     * which meant every caller that passed a sensible per-second rate — doors,
+     * pressure plates, the hand retracting, a monster's acceleration, a deck on
+     * a chain — closed the whole gap in a single frame and simply teleported.
+     */
     fun approach(current: Float, target: Float, rate: Float, dt: Float): Float {
-        val t = 1f - Math.pow((1f - clamp(rate, 0f, 0.9999f)).toDouble(), (dt * 60f).toDouble()).toFloat()
-        return lerp(current, target, t)
+        if (rate <= 0f || dt <= 0f) return current
+        return lerp(current, target, 1f - kotlin.math.exp(-rate * dt))
     }
 
     fun moveToward(current: Float, target: Float, maxDelta: Float): Float {

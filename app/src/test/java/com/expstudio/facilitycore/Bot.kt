@@ -3,6 +3,7 @@ package com.expstudio.facilitycore
 import com.expstudio.facilitycore.audio.Sfx
 import com.expstudio.facilitycore.core.Box
 import com.expstudio.facilitycore.game.GameSession
+import com.expstudio.facilitycore.game.ReachAnchor
 import kotlin.math.abs
 
 /**
@@ -13,7 +14,13 @@ import kotlin.math.abs
  * SNEAK and USE — and decides with the same information a player reads off the
  * screen: solid ground a stride ahead, a step to climb, a slot to duck under.
  */
-class Bot(private val session: GameSession, private val dir: Float = 1f) {
+class Bot(private val session: GameSession, dir: Float = 1f) {
+
+    /**
+     * Which way it is heading. Steerable, so a caller can aim the same bot at
+     * one thing after another without losing its jump and crouch state.
+     */
+    var dir: Float = dir
 
     private var stalled = 0f
     private var jumpCooldown = 0f
@@ -98,10 +105,19 @@ class Bot(private val session: GameSession, private val dir: Float = 1f) {
         var hold = false
         if (useReach && session.reach.unlocked) {
             if (session.reach.busy) {
-                hold = true
-            } else if (session.reach.ready && session.reach.pick(session) != null) {
-                grab = true
-                hold = true
+                // A crate haul in flight belongs to whoever began it — the bot
+                // never starts one, and holding it here would drag a puzzle's
+                // crate across the room and into the doorway it is walking to.
+                hold = session.reach.target?.kind != ReachAnchor.Kind.CRATE
+            } else if (session.reach.ready) {
+                // Anything but a crate. Bars, shutters, seams and levers are
+                // all things a player uses where they find them; a crate is a
+                // thing they would only move on purpose.
+                val target = session.reach.pick(session)
+                if (target != null && target.kind != ReachAnchor.Kind.CRATE) {
+                    grab = true
+                    hold = true
+                }
             }
         }
         session.update(dt, dir, crouch, wantJump, interact, false, grab, hold)

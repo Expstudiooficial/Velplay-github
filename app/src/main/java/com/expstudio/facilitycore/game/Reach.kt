@@ -167,6 +167,8 @@ class Reach {
     private var flyTime = 0f
     private var flyFromX = 0f
     private var flyFromY = 0f
+    private var flyToX = 0f
+    private var flySeconds = FLY_SECONDS
 
     /** Blocked while a hand is out; the player cannot roll mid-pull. */
     val busy: Boolean get() = state != State.IDLE
@@ -306,14 +308,17 @@ class Reach {
     fun update(g: GameSession, dt: Float, holding: Boolean) {
         if (cooldown > 0f) cooldown -= dt
         val a = target
-        if (a == null) { state = State.IDLE; extend = MathX.approach(extend, 0f, 8f, dt); return }
+        if (a == null) { state = State.IDLE; extend = MathX.moveToward(extend, 0f, dt / RETRACT_SECONDS); return }
 
         val ox = originX(g)
         val oy = originY(g)
 
         when (state) {
             State.EXTENDING -> {
-                extend = MathX.approach(extend, 1f, EXTEND_RATE, dt)
+                // A throw, not an ease. The arm has to be out before the player
+                // has run three more strides, or they are off the lip and into
+                // the hole the arm was for.
+                extend = MathX.moveToward(extend, 1f, dt / EXTEND_SECONDS)
                 tipX = MathX.lerp(ox, anchorX, extend)
                 tipY = MathX.lerp(oy, anchorY, extend)
                 if (extend >= 0.999f) {
@@ -345,10 +350,10 @@ class Reach {
             }
             State.FLYING -> {
                 flyTime += dt
-                val p = MathX.clamp(flyTime / FLY_SECONDS, 0f, 1f)
+                val p = MathX.clamp(flyTime / flySeconds, 0f, 1f)
                 val e = MathX.smoothStep(p)
                 // Land on top of the bar, not inside it.
-                val landX = anchorX
+                val landX = flyToX
                 val landY = a.box.t - 0.02f
                 g.player.teleport(
                     MathX.lerp(flyFromX, landX, e),
@@ -370,7 +375,7 @@ class Reach {
                 }
             }
             State.RETRACT, State.IDLE -> {
-                extend = MathX.approach(extend, 0f, 8f, dt)
+                extend = MathX.moveToward(extend, 0f, dt / RETRACT_SECONDS)
                 if (extend <= 0.01f) { state = State.IDLE; target = null }
             }
         }
@@ -381,6 +386,12 @@ class Reach {
         flyTime = 0f
         flyFromX = g.player.x
         flyFromY = g.player.y
+        // A rail carries you along it to the far end; an ordinary bar just
+        // pulls you to itself. Landing a rail traverse on the grip would drop
+        // the player into the middle of the gap it exists to cross.
+        flyToX = (a as? PullRail)?.toX ?: anchorX
+        val span = kotlin.math.abs(flyToX - flyFromX)
+        flySeconds = (FLY_SECONDS * (0.6f + span / 9f)).coerceIn(FLY_SECONDS, 1.6f)
         g.player.controlEnabled = false
         g.player.shadow = false
         g.player.vx = 0f
@@ -470,7 +481,9 @@ class Reach {
         /** Long enough to make rooms feel crossable, short enough to be a puzzle. */
         const val RANGE = 8.5f
         const val BEHIND_PENALTY = 4.5f
-        const val EXTEND_RATE = 5.2f
+        /** Seconds for the arm to reach full stretch, and to come back. */
+        const val EXTEND_SECONDS = 0.12f
+        const val RETRACT_SECONDS = 0.18f
         const val FLY_SECONDS = 0.42f
         const val COOLDOWN = 0.30f
         const val CRATE_SPEED = 3.2f

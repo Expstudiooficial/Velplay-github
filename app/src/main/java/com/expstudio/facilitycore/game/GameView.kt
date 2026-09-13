@@ -269,6 +269,10 @@ class GameView(
                 onQuit?.invoke()
                 return@synchronized true
             }
+            if (session.cut == Cut.CH4_ASCENT && session.endingProgressCh4 >= 0.97f) {
+                onQuit?.invoke()
+                return@synchronized true
+            }
             if (hypot(e.x - pauseButton.cx, e.y - pauseButton.cy) <= pauseButton.radius * 1.4f) {
                 audio.play(Sfx.Id.CLICK)
                 pauseSheet = true
@@ -341,6 +345,10 @@ class GameView(
             drawChapter3Opening(c, w, h)
         } else if (session.cut == Cut.CH3_ENDING) {
             drawChapter3Ending(c, w, h)
+        } else if (session.cut == Cut.CH4_CORE) {
+            drawChapter3Ending(c, w, h)
+        } else if (session.cut == Cut.CH4_ASCENT) {
+            drawChapter4Ending(c, w, h)
         } else {
             session.render(c, draw, w, h)
             drawHud(c, w, h)
@@ -662,6 +670,18 @@ class GameView(
             audio.play(Sfx.Id.IMPACT, 0.95f)
             audio.play(Sfx.Id.SCREAM, 0.8f)
             session.onHaptic?.invoke(180)
+        }
+    }
+
+    private val escapeScene = EscapeScene()
+
+    /** The only ending in the game with daylight in it. */
+    private fun drawChapter4Ending(c: Canvas, w: Float, h: Float) {
+        escapeScene.draw(c, draw, w, h, session.time, session.endingProgressCh4)
+        if (escapeScene.consumeKick()) {
+            audio.play(Sfx.Id.IMPACT, 1f)
+            audio.play(Sfx.Id.SHUTTER, 0.7f)
+            session.onHaptic?.invoke(120)
         }
     }
 
