@@ -181,7 +181,7 @@ class Player {
                 stepEvent = true
             }
         } else {
-            walkPhase = MathX.approach(walkPhase, 0f, 0.2f, dt)
+            walkPhase = MathX.approach(walkPhase, 0f, 13.4f, dt)
             stepTimer = 0.05f
         }
         if (landSquash > 0f) landSquash = (landSquash - dt * 4.5f).coerceAtLeast(0f)

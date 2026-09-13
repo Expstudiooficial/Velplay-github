@@ -72,8 +72,11 @@ class Camera {
         val tx = targetX
         val ty = targetY
         if (snap) { x = tx; y = ty } else {
-            x = MathX.approach(x, tx, 0.16f, dt)
-            y = MathX.approach(y, ty, 0.12f, dt)
+            // Per second, not per frame. These were 0.16 and 0.12 back when
+            // approach() read its rate as a fraction closed each frame at 60Hz;
+            // these are the same easing said in the units it now takes.
+            x = MathX.approach(x, tx, 10.5f, dt)
+            y = MathX.approach(y, ty, 7.7f, dt)
         }
         clampTo(bounds)
     }

@@ -66,6 +66,49 @@ class ScreenshotTest {
         }
     }
 
+    /** Chapter 4: the ten mechanisms, the face of the door, and the way out. */
+    @Test
+    fun captureChapter4Frames() {
+        val s4 = com.expstudio.facilitycore.game.Stage4
+        shoot("ch4_core_deck", s4.DESCENT, chapter = 4, settle = 1.0f) { g ->
+            g.enterRoomForTest("core4", 24f, 0f)
+        }
+        for ((name, room) in listOf(
+            "ch4_ballast" to "g3", "ch4_crumble" to "g8", "ch4_riser" to "g17",
+            "ch4_interlock" to "h15", "ch4_counterweight" to "h22",
+            "ch4_column" to "h36", "ch4_assembly" to "h40"
+        )) {
+            shoot(name, s4.DEEP4, chapter = 4, settle = 1.0f) { g ->
+                g.enterRoomForTest(room, 4f, 0f)
+            }
+        }
+        shoot("ch4_bigdoor", s4.BIG_DOOR, chapter = 4, settle = 1.0f) { g ->
+            g.enterRoomForTest("bigdoor4", 14f, 0f)
+        }
+        shoot("ch4_ren", s4.REN, chapter = 4, settle = 1.0f) { g ->
+            g.enterRoomForTest("ren4", 14f, 0f)
+        }
+    }
+
+    /** Chapter 4's closing shot: the car, the stall, the run, the daylight. */
+    @Test
+    fun captureChapter4Ending() {
+        val scene = com.expstudio.facilitycore.game.EscapeScene()
+        for ((name, p) in listOf(
+            "ch4_end_1_ride" to 0.15f,
+            "ch4_end_2_stall" to 0.38f,
+            "ch4_end_3_rooms" to 0.58f,
+            "ch4_end_4_kick" to 0.78f,
+            "ch4_end_5_out" to 0.94f
+        )) {
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            scene.draw(Canvas(bmp), Draw(), w.toFloat(), h.toFloat(), 3.1f, p)
+            val out = File("build/screenshots").apply { mkdirs() }
+            FileOutputStream(File(out, "$name.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            println("wrote build/screenshots/$name.png")
+        }
+    }
+
     /** The fights, with the monsters placed where the player would see them. */
     @Test
     fun captureFightFrames() {

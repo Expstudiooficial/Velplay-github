@@ -1,6 +1,9 @@
 package com.expstudio.facilitycore
 
+import com.expstudio.facilitycore.game.ChaseLeg
+import com.expstudio.facilitycore.game.Monster
 import com.expstudio.facilitycore.game.Stage
+import com.expstudio.facilitycore.game.Stage2
 import com.expstudio.facilitycore.game.Stage3
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -123,6 +126,42 @@ class PursuitTest {
             t += dt
         }
         assertTrue("it never left the room it started in (visited $seen)", seen.size >= 2)
+    }
+
+    /**
+     * Chapter 2's two chases run on the same legs.
+     *
+     * The rework lives in the session rather than in any one chapter, so this
+     * is here to prove that rather than to assume it: both of Chapter 2's
+     * pursuits have to close real ground on a player who is standing still,
+     * the same way Chapter 1's and Chapter 3's do.
+     */
+    @Test
+    fun chapterTwosChasesArePursuitsToo() {
+        for (which in listOf(Stage2.PLAYERR_CHASE, Stage2.SHADE_CHASE)) {
+            val g = Bot.session(Stage2.MEET_PLAYERR, chapter = 2)
+            g.camera.resize(1920, 1080)
+            g.enterRoomForTest("hall", com.expstudio.facilitycore.game.Chapter2.HALL_TRIGGER_X, 0f)
+            g.monster.kind = Monster.Kind.PLAYERR
+            g.monster.setRoute(
+                listOf(
+                    ChaseLeg("hall", com.expstudio.facilitycore.game.Chapter2.HALL_TRIGGER_X - 6f, 27.5f, 0f),
+                    ChaseLeg("maze_a", 0.5f, 15.5f, 0f),
+                    ChaseLeg("maze_b", 0.5f, 15.5f, 0f),
+                    ChaseLeg("hoist", 0.5f, 14.5f, 0f)
+                )
+            )
+            g.startChase(which)
+            val startRoom = g.monster.roomId
+            val startX = g.monster.x
+            var t = 0f
+            while (t < 3f && !g.cutIsDeath()) { g.update(dt, 0f, false, false, false); t += dt }
+            assertTrue(
+                "chase %d did not move while the player stood still (%.2f m, %s -> %s)"
+                    .format(which, abs(g.monster.x - startX), startRoom, g.monster.roomId),
+                g.monster.roomId != startRoom || abs(g.monster.x - startX) > 4f
+            )
+        }
     }
 
     /** And it never ends up inside the ceiling or under the floor doing it. */

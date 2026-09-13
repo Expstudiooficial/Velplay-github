@@ -105,7 +105,9 @@ class CrumblePlatform(box: Box, val id: String) : Prop(box) {
             state = MathX.approach(state, 1f, 1.9f, dt)
             if (state >= 0.999f) { falling = false; touched = 0f }
         } else if (!stood && state > 0f) {
-            state = MathX.approach(state, 0f, 0.55f, dt)
+            // Back in about half a second — long enough that a botched run has
+            // to be waited out rather than retried on the spot.
+            state = MathX.approach(state, 0f, 2.5f, dt)
             if (state <= 0.001f) touched = 0f
         }
         // Sags as it goes, then is simply not there.
