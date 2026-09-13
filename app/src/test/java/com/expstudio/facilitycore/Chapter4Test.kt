@@ -10,6 +10,14 @@ import com.expstudio.facilitycore.game.Reach
 import com.expstudio.facilitycore.game.ReachAnchor
 import com.expstudio.facilitycore.game.Carriage
 import com.expstudio.facilitycore.game.Counterweight
+import com.expstudio.facilitycore.game.TimedGate
+import com.expstudio.facilitycore.game.SweepBeam
+import com.expstudio.facilitycore.game.SlapSwitch
+import com.expstudio.facilitycore.game.Prop
+import com.expstudio.facilitycore.game.PressurePlate
+import com.expstudio.facilitycore.game.Mechanism
+import com.expstudio.facilitycore.game.CrumblePlatform
+import com.expstudio.facilitycore.game.BlockBeam
 import com.expstudio.facilitycore.game.Solid
 import com.expstudio.facilitycore.game.Updraft
 import com.expstudio.facilitycore.game.Stage4
@@ -290,6 +298,55 @@ class Chapter4Test {
     }
 
     /** The chapter is the size the outline says it is. */
+    /**
+     * All ten mechanisms, each in a room the player actually walks through.
+     *
+     * The chapter was asked for ten new puzzles that are solved by moving
+     * rather than by tapping a panel, so "it exists in the source" is not the
+     * claim worth checking — "it is in a room on the route" is.
+     */
+    @Test
+    fun allTenMechanismsAppearOnTheRoute() {
+        val level = Chapter4.build()
+        val missing = ArrayList<String>()
+        fun expect(name: String, present: (Prop) -> Boolean) {
+            if (level.rooms.values.none { r -> r.props.any(present) }) missing.add(name)
+        }
+        expect("pressure plate") { it is PressurePlate }
+        expect("crumbling deck") { it is CrumblePlatform }
+        expect("sweeping beam") { it is SweepBeam }
+        expect("column of air") { it is Updraft }
+        expect("carriage") { it is Carriage }
+        expect("timed gate") { it is TimedGate }
+        expect("slap switch") { it is SlapSwitch }
+        expect("beam a crate will stop") { it is BlockBeam }
+        expect("counterweighted deck") { it is Counterweight }
+        expect("pull rail") { it is PullRail }
+        assertTrue("mechanisms missing from the chapter: $missing", missing.isEmpty())
+    }
+
+    /**
+     * Every mechanism door has a mechanism in its own room that can open it.
+     *
+     * A door held by a group with nothing in the room to satisfy it is a wall
+     * with a story about it.
+     */
+    @Test
+    fun everyMechanismDoorHasSomethingInItsRoomThatOpensIt() {
+        val level = Chapter4.build()
+        for (room in level.rooms.values) {
+            val held = room.props.filterIsInstance<Door>().filter { it.name == "door_${room.id}" }
+            for (door in held) {
+                val group = room.id
+                val owners = room.props.filterIsInstance<Mechanism>().filter { it.group == group }
+                assertTrue(
+                    "${door.name} in ${room.id} is held by a group nothing in that room belongs to",
+                    owners.isNotEmpty()
+                )
+            }
+        }
+    }
+
     @Test
     fun theChapterIsAsLongAsItWasSpecified() {
         val count = level.rooms.size

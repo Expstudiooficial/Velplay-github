@@ -4,6 +4,7 @@ import com.expstudio.facilitycore.game.Monster
 import com.expstudio.facilitycore.game.Stage
 import com.expstudio.facilitycore.game.Stage2
 import com.expstudio.facilitycore.game.Stage3
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -56,6 +57,60 @@ class FightVisibilityTest {
         problems += runFight(Stage3.ARCHIVE, 3, "archive3", 6f)
         problems += runFight(Stage3.BOSS, 3, "core3", 6f)
         assertTrue("hunters off the floor:\n  " + problems.joinToString("\n  "), problems.isEmpty())
+    }
+
+    /**
+     * The archive is worth five lives, and says so.
+     *
+     * Three sequences, each longer than the last, learnt on a ziggurat with
+     * something faster than you on the floor. At three lives the learning cost
+     * a checkpoint every time.
+     */
+    @Test
+    fun theArchiveIsFoughtWithFiveLives() {
+        // From the checkpoint a death here actually returns to, and in through
+        // the door, because walking in is what starts the fight.
+        val g = Bot.session(Stage3.ARCHIVE, chapter = 3)
+        g.enterRoomForTest("archive3", com.expstudio.facilitycore.game.Chapter3.ARCHIVE_TRIGGER_X + 0.5f, 0f)
+        repeat(60) { g.update(dt, 0f, false, false, false) }
+        assertEquals("the fight never started", Stage3.ARCHIVE_PUZZLE, g.stage)
+        assertEquals("the archive is not a five-life fight", 5, g.maxHealth)
+        assertEquals("it did not start on full", 5, g.health)
+    }
+
+    /**
+     * Walking back out of the archive and in again must not drop it through
+     * the floor.
+     *
+     * The hunter's height is read off whatever it is standing over, and the
+     * search used to take the highest solid above it — which in a room with a
+     * ceiling slab is the ceiling. Re-entering re-ran that search, and the
+     * thing ended up under the ziggurat where nothing could reach it.
+     */
+    @Test
+    fun leavingTheArchiveAndComingBackLeavesTheHunterOnTheFloor() {
+        val g = Bot.session(Stage3.ARCHIVE, chapter = 3)
+        g.enterRoomForTest("archive3", com.expstudio.facilitycore.game.Chapter3.ARCHIVE_TRIGGER_X + 0.5f, 0f)
+        repeat(90) { g.update(dt, 0f, false, false, false) }
+        val floor = g.monster.y
+        assertTrue("it did not start on the floor (y=%.2f)".format(floor), floor > -2f)
+
+        // Out through the back, then straight back in.
+        val back = g.level.room("archive3").exits.first { it.toRoom != "juke3" }
+        g.enterRoomForTest(back.toRoom, 6f, 0f)
+        repeat(90) { g.update(dt, 0f, false, false, false) }
+        g.enterRoomForTest("archive3", 6f, 0f)
+        repeat(90) { g.update(dt, 0f, false, false, false) }
+
+        val b = g.level.room("archive3").bounds
+        assertTrue(
+            "the hunter came back through the floor (y=%.2f, room %.1f..%.1f)".format(g.monster.y, b.t, b.b),
+            g.monster.y <= b.b + 0.5f && g.monster.y >= b.t - 0.5f
+        )
+        assertTrue(
+            "the hunter came back somewhere a swing could not reach from (y=%.2f)".format(g.monster.y),
+            kotlin.math.abs(g.monster.y - floor) < 2.5f
+        )
     }
 
     @Test
