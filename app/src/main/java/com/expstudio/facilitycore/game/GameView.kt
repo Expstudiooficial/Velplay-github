@@ -648,76 +648,20 @@ class GameView(
         }
     }
 
+    private val coreScene = CoreScene()
+
     /**
-     * The last shot: the well takes both of them, and the light it makes doing
-     * it is the only thing left on the screen.
+     * The last shot: they arrive at a run, take the jump that is not there any
+     * more, and the well has them. Staged in [CoreScene] rather than here — it
+     * is the chapter's closing image and deserved more than four rectangles.
      */
     private fun drawChapter3Ending(c: Canvas, w: Float, h: Float) {
         val p = session.endingProgressCh3
-        draw.rect(c, 0f, 0f, w, h, Palette.VOID)
-        val cx = w * 0.5f
-        val floorY = h * 0.72f
-
-        // The lip of the pit, from the far side.
-        draw.rect(c, 0f, floorY, w * 0.30f, h, Palette.mix(Palette.FLOOR, Palette.VOID, 0.45f))
-        draw.rect(c, w * 0.70f, floorY, w, h, Palette.mix(Palette.FLOOR, Palette.VOID, 0.45f))
-        draw.rect(c, 0f, floorY, w * 0.30f, floorY + h * 0.012f, Palette.TRIM)
-        draw.rect(c, w * 0.70f, floorY, w, floorY + h * 0.012f, Palette.TRIM)
-        // The crate, sitting exactly where the landing used to be.
-        val crateW = w * 0.085f
-        draw.round(c, w * 0.70f, floorY - crateW, w * 0.70f + crateW, floorY, h * 0.008f,
-            Palette.mix(Palette.WALL_LIT, Palette.VOID, 0.25f))
-
-        // Two silhouettes, out over nothing.
-        val fall = MathX.clamp((p - 0.18f) / 0.5f, 0f, 1f)
-        val arc = MathX.smoothStep(fall)
-        var i = 0
-        while (i < 2) {
-            val lead = if (i == 0) 0f else 0.09f
-            val f = MathX.clamp((p - 0.18f - lead) / 0.5f, 0f, 1f)
-            val fx = MathX.lerp(w * 0.74f, cx + (if (i == 0) -w * 0.02f else w * 0.03f), MathX.smoothStep(f))
-            val fy = MathX.lerp(floorY - h * 0.16f, h * 1.15f, f * f)
-            val scale = MathX.lerp(1f, 0.42f, f)
-            val bh = h * 0.30f * scale
-            val bw = bh * 0.34f
-            val tint = if (i == 0) Palette.MONSTER else Palette.mix(Palette.MONSTER, Palette.MONSTER_CRACK, 0.35f)
-            draw.round(c, fx - bw * 0.5f, fy - bh, fx + bw * 0.5f, fy, bw * 0.3f, tint)
-            draw.circle(c, fx, fy - bh, bw * 0.52f, tint)
-            if (f < 0.85f) {
-                val ea = 1f - f / 0.85f
-                draw.circle(c, fx - bw * 0.18f, fy - bh, bw * 0.10f, Palette.withAlpha(Palette.MONSTER_EYE, ea))
-                draw.circle(c, fx + bw * 0.18f, fy - bh, bw * 0.10f, Palette.withAlpha(Palette.MONSTER_EYE, ea))
-            }
-            i++
-        }
-
-        // The well answers.
-        val bloom = MathX.clamp((p - 0.55f) / 0.25f, 0f, 1f)
-        val heat = MathX.lerp(0.25f, 1f, arc)
-        var band = 0
-        while (band < 9) {
-            val bf = band / 9f
-            val yy = MathX.lerp(h * 1.05f, floorY, bf)
-            val wob = sin(session.time * (2.4f + band * 0.35f) + band) * w * 0.012f
-            draw.rect(c, w * 0.30f + wob, yy - h * 0.05f, w * 0.70f + wob, yy,
-                Palette.withAlpha(Palette.mix(Palette.WARN, Palette.BAD, bf), 0.5f * heat))
-            band++
-        }
-        draw.glow(c, cx, floorY + h * 0.06f, w * (0.22f + 0.55f * bloom), Palette.WARN, 1.2f * heat)
-        draw.glow(c, cx, floorY + h * 0.06f, w * (0.10f + 0.30f * bloom), Palette.TEXT, 1.1f * bloom)
-        if (bloom > 0f) draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.TEXT, bloom * bloom * 0.92f))
-
-        // Then nothing, and then the card.
-        val settle = MathX.clamp((p - 0.80f) / 0.12f, 0f, 1f)
-        if (settle > 0f) draw.rect(c, 0f, 0f, w, h, Palette.withAlpha(Palette.VOID, settle))
-        if (p >= 0.97f) {
-            draw.textCentered(c, "CHAPTER 3 COMPLETE", w * 0.5f, h * 0.42f, h * 0.075f, Palette.TEXT, true)
-            draw.textCentered(c, "The facility is quiet. It was never going to be quiet.",
-                w * 0.5f, h * 0.52f, h * 0.032f, Palette.TEXT_DIM)
-            draw.textCentered(c, "Ren is still down there.", w * 0.5f, h * 0.575f, h * 0.032f, Palette.TEXT_DIM)
-            val hint = 0.45f + 0.35f * sin(session.time * 3f)
-            draw.textCentered(c, "tap to return to the menu", w * 0.5f, h * 0.68f, h * 0.034f,
-                Palette.withAlpha(Palette.ACCENT, hint), true)
+        coreScene.draw(c, draw, w, h, session.time, p)
+        if (coreScene.consumeImpact()) {
+            audio.play(Sfx.Id.IMPACT, 0.95f)
+            audio.play(Sfx.Id.SCREAM, 0.8f)
+            session.onHaptic?.invoke(180)
         }
     }
 

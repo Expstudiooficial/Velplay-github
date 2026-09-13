@@ -47,6 +47,25 @@ class ScreenshotTest {
         println("wrote build/screenshots/$name.png")
     }
 
+    /** Chapter 3's closing shot, across its beats. */
+    @Test
+    fun captureChapter3Ending() {
+        val scene = com.expstudio.facilitycore.game.CoreScene()
+        for ((name, p) in listOf(
+            "ch3_end_1_run" to 0.18f,
+            "ch3_end_2_jump" to 0.38f,
+            "ch3_end_3_crate" to 0.47f,
+            "ch3_end_4_fall" to 0.58f,
+            "ch3_end_5_bloom" to 0.68f
+        )) {
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            scene.draw(Canvas(bmp), Draw(), w.toFloat(), h.toFloat(), 3.1f, p)
+            val out = File("build/screenshots").apply { mkdirs() }
+            FileOutputStream(File(out, "$name.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            println("wrote build/screenshots/$name.png")
+        }
+    }
+
     /** The fights, with the monsters placed where the player would see them. */
     @Test
     fun captureFightFrames() {
