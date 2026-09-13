@@ -101,7 +101,10 @@ object Chapter3 {
 
     const val CHASE_SECONDS = 48f
     const val DEEP_CHASE_SECONDS = 54f
-    const val VENT_SECONDS = 26f
+    // A clean crawl of the duct takes 23 seconds, so 26 left a player who
+    // hesitated once with nothing. The tension in here is the sound behind
+    // you, not a stopwatch you cannot see.
+    const val VENT_SECONDS = 34f
     /**
      * How long the boss stays in the room before the floor gives out.
      *

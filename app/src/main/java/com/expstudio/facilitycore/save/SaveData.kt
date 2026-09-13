@@ -16,7 +16,14 @@ data class WorldSave(
     var playSeconds: Long,
     var createdAt: Long,
     var lastPlayedAt: Long,
-    var completed: Boolean
+    var completed: Boolean,
+    /**
+     * The last composed corridor the player reached, so a death does not send
+     * them back through fifty rooms they have already walked. Optional: an
+     * older save simply has none, and falls back to the stage's own spawn.
+     */
+    var waypointRoom: String = "",
+    var waypointStage: Int = -1
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -28,6 +35,8 @@ data class WorldSave(
         put("createdAt", createdAt)
         put("lastPlayedAt", lastPlayedAt)
         put("completed", completed)
+        put("waypointRoom", waypointRoom)
+        put("waypointStage", waypointStage)
     }
 
     companion object {
@@ -40,7 +49,9 @@ data class WorldSave(
             playSeconds = o.optLong("playSeconds", 0L).coerceAtLeast(0L),
             createdAt = o.optLong("createdAt", System.currentTimeMillis()),
             lastPlayedAt = o.optLong("lastPlayedAt", System.currentTimeMillis()),
-            completed = o.optBoolean("completed", false)
+            completed = o.optBoolean("completed", false),
+            waypointRoom = o.optString("waypointRoom", ""),
+            waypointStage = o.optInt("waypointStage", -1)
         )
     }
 }

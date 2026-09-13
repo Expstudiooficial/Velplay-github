@@ -190,13 +190,18 @@ object Rooms4 {
         }
 
         // 6. A gate on a clock, with the switch a long way from it.
+        //
+        // Twenty-two metres and three things to get over. A flat sprint of that
+        // alone is 5.1 seconds, so the 5.2 this used to allow was not a tight
+        // run — it was no run at all, and the room was a dead end with a
+        // countdown drawn on it.
         9 -> room(id, "Timed Face", 30f).apply {
             lamp(8f, 5f, tint = Palette.WARN)
             props.add(SlapSwitch(Box.of(3.2f, -2.4f, 1.0f, 1.0f), "sw_gate1", "START"))
             solid(9.0f, -1.0f, 1.8f, 1.0f, Solid.Kind.CRATE)
             solid(14.0f, -1.6f, 3.0f, 0.4f, Solid.Kind.PLATFORM)
             solid(19.5f, -1.0f, 1.8f, 1.0f, Solid.Kind.CRATE)
-            props.add(TimedGate(Box.of(26.0f, -3.8f, 0.9f, 3.8f), "gate_h9", 5.2f))
+            props.add(TimedGate(Box.of(26.0f, -3.8f, 0.9f, 3.8f), "gate_h9", 9.0f))
         }
 
         12 -> room(id, "Long Hall", 34f, 12f).apply {

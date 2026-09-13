@@ -62,6 +62,19 @@ class Room(
     val props = ArrayList<Prop>()
     val exits = ArrayList<Exit>()
 
+    /**
+     * Whether reaching this room is worth remembering as a place to come back
+     * to after a death.
+     *
+     * Set on the composed corridors, which are the long stretches between the
+     * chapters' set pieces — fifty of them in a row under Subfloor 4. Their
+     * state is entirely geometry, so respawning into one is always a position
+     * the player could have walked to, with nothing consumed and nothing
+     * skipped. Set pieces deliberately are not waypoints: they own state that
+     * only their own stage knows how to rebuild.
+     */
+    var waypoint: Boolean = false
+
     fun solid(x: Float, y: Float, w: Float, h: Float, kind: Solid.Kind = Solid.Kind.STRUCTURE): Solid {
         val s = Solid(Box.of(x, y, w, h), kind)
         solids.add(s)
@@ -117,8 +130,22 @@ class Door(
     var scanTime: Float = 0f
     var scanning: Boolean = false
 
+    /**
+     * Passable from halfway, and never around a body.
+     *
+     * Two rules, both learnt the hard way. Halfway, because "passable above
+     * 0.85" means a door that is visibly standing open is still a wall for the
+     * first half-second of opening and becomes a wall again within a frame of
+     * starting to close. And never around a body, because a slab that turns
+     * solid in the space someone is standing in either squeezes them somewhere
+     * they did not choose or leaves them inside it — and the shutters that drop
+     * behind the player at the end of a chase drop exactly there.
+     */
     override val solid: Box?
-        get() = if (openAmount > 0.85f) null else box
+        get() = if (openAmount > 0.5f || standingInIt) null else box
+
+    /** Set each frame from the player's own box; see [solid]. */
+    private var standingInIt = false
 
     override val reach: Float = 1.6f
 
@@ -166,7 +193,9 @@ class Door(
                 beginOpen(g)
             }
         }
-        val target = if (open) 1f else 0f
+        standingInIt = box.inflated(0.12f).overlaps(g.player.bounds())
+        // A door does not shut on someone standing in it. It waits.
+        val target = if (open || (standingInIt && openAmount > 0.05f)) 1f else 0f
         openAmount = MathX.moveToward(openAmount, target, dt * 0.9f)
     }
 

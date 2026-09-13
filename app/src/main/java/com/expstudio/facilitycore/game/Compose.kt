@@ -297,8 +297,9 @@ object Compose {
         var i = 0
         while (i < count) {
             val id = "$prefix$i"
-            rooms[id] = authored(i, id) ?: room(id, "$title ${i + 1}/$count", seed + i * 7919L, flavour,
-                budget = budget, height = if (flavour == Flavour.DEEP) 9.5f else 8.5f)
+            rooms[id] = (authored(i, id) ?: room(id, "$title ${i + 1}/$count", seed + i * 7919L, flavour,
+                budget = budget, height = if (flavour == Flavour.DEEP) 9.5f else 8.5f))
+                .also { it.waypoint = true }
             ids.add(id)
             i++
         }

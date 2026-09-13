@@ -298,12 +298,21 @@ class Carriage(box: Box, val id: String, val fromX: Float, val toX: Float, priva
  */
 class TimedGate(box: Box, val name: String, private val openSeconds: Float) : Prop(box) {
 
+    /** How long a press buys, so a test can say whether that is enough. */
+    val openSecondsForTest: Float get() = openSeconds
+
     var open = false
         private set
     private var left = 0f
     private var slab = 0f
 
-    override val solid: Box? get() = if (slab > 0.85f) null else box
+    // Passable from halfway, and symmetric, so what the slab looks like and
+    // what it does are the same thing in both directions. It used to be
+    // "passable above 0.85", which on an eased travel meant half a second of
+    // being solid while it visibly stood open, and — far worse on the way down
+    // — solid again within a twentieth of a second of the clock ending, while
+    // still drawn wide open.
+    override val solid: Box? get() = if (slab > 0.5f) null else box
 
     fun trigger(g: GameSession) {
         left = openSeconds
@@ -314,15 +323,26 @@ class TimedGate(box: Box, val name: String, private val openSeconds: Float) : Pr
     }
 
     override fun update(g: GameSession, dt: Float) {
+        // Never shut on a body that is standing in the doorway. A slab that
+        // becomes solid in the space someone occupies either squeezes them out
+        // somewhere they did not choose or leaves them inside it.
+        val inTheWay = box.inflated(0.15f).overlaps(g.player.bounds())
+
         if (left > 0f) {
             left -= dt
-            if (left <= 0f) {
+            if (left <= 0f && !inTheWay) {
                 open = false
                 g.playSound(Sfx.Id.SHUTTER, 0.7f)
             }
+        } else if (open && !inTheWay) {
+            open = false
+            g.playSound(Sfx.Id.SHUTTER, 0.7f)
         }
-        slab = MathX.approach(slab, if (open) 1f else 0f, 3.2f, dt)
+        // A shutter travels at a speed. Roughly half a second, end to end.
+        slab = MathX.moveToward(slab, if (open) 1f else 0f, dt / TRAVEL_SECONDS)
     }
+
+    private companion object { const val TRAVEL_SECONDS = 0.45f }
 
     override fun draw(c: Canvas, d: Draw, cam: Camera, g: GameSession) {
         val l = cam.sx(box.l); val r = cam.sx(box.r)
@@ -474,6 +494,16 @@ class Counterweight(
         val zone = Box(box.l, box.t - 0.5f, box.r, box.t + 0.2f)
         if (dy != 0f && zone.overlaps(g.player.bounds()) && g.player.y <= box.t + 0.3f) {
             g.player.teleport(g.player.x, g.player.y + dy)
+        }
+
+        // And never arrive around them. A deck coming down onto someone
+        // standing under it has to put them on top of itself — the alternative
+        // is the solver choosing a direction to squeeze them out in, which at
+        // best stands them somewhere they did not walk to and at worst leaves
+        // them sealed inside a solid with the way out above their head.
+        if (box.overlaps(g.player.bounds())) {
+            g.player.teleport(g.player.x, box.t)
+            g.player.vy = 0f
         }
     }
 

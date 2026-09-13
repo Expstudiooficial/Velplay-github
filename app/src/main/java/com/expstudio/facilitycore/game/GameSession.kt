@@ -210,6 +210,10 @@ class GameSession(
         blockedTime = 0f
         crouchHint = false
         chaseStageValue = NO_CHASE
+        if (script.checkpointFor(waypointStage) != checkpoint) {
+            waypointRoom = null
+            waypointStage = -1
+        }
         reach.reset()
         cut = Cut.NONE
         cutTime = 0f
@@ -242,7 +246,7 @@ class GameSession(
 
         script.applyStage(this, checkpoint)
 
-        val (roomId, sx, sy) = script.spawnFor(checkpoint)
+        val (roomId, sx, sy) = spawnPointFor(checkpoint)
         room = level.room(roomId)
         player.teleport(sx, sy)
         camera.follow(player.x, player.y - 1f, room.bounds, 0f, snap = true)
@@ -599,7 +603,60 @@ class GameSession(
 
     private fun onRoomEntered(roomId: String) = script.onRoomEntered(this, roomId)
 
-    private fun updateStory(dt: Float) = script.update(this, dt)
+    /**
+     * Remembers a corridor worth coming back to.
+     *
+     * The chapters' stage checkpoints are set pieces, and between two of them
+     * can lie fifty composed rooms — dying in the last of those used to put the
+     * player back at the first and ask them to walk the whole run again. A
+     * composed room's entire state is its geometry, so returning to one is
+     * always somewhere the player could have walked to under their own steam,
+     * with nothing consumed and nothing skipped.
+     *
+     * Never recorded mid-chase or mid-cutscene: those are the moments the
+     * chapter's own checkpoint exists to replay.
+     *
+     * Read every frame off the current room rather than hooked to a doorway,
+     * because rooms are also arrived at by a cutscene setting them directly —
+     * stepping out of the lift onto Subfloor 4 is one of them.
+     */
+    private fun noteWaypoint() {
+        if (!room.waypoint || cut != Cut.NONE || stage == chaseStageValue) return
+        waypointRoom = room.id
+        waypointStage = stage
+    }
+
+    /** The last composed corridor reached, and the stage it was reached at. */
+    var waypointRoom: String? = null
+    var waypointStage: Int = -1
+
+    /** Restores a waypoint read back from a save. */
+    fun restoreWaypoint(roomId: String?, atStage: Int) {
+        waypointRoom = roomId
+        waypointStage = atStage
+    }
+
+    /**
+     * Where a death at [checkpoint] should actually put the player.
+     *
+     * The waypoint only counts if it belongs to the same checkpoint — a stage
+     * regression means the world was rebuilt differently and the corridor we
+     * remember may not be on the route any more.
+     */
+    private fun spawnPointFor(checkpoint: Int): Triple<String, Float, Float> {
+        val stageSpawn = script.spawnFor(checkpoint)
+        val id = waypointRoom ?: return stageSpawn
+        if (script.checkpointFor(waypointStage) != checkpoint) return stageSpawn
+        val r = level.rooms[id] ?: return stageSpawn
+        if (!r.waypoint) return stageSpawn
+        // Just inside its left-hand doorway, on the floor, facing the way out.
+        return Triple(id, r.bounds.l + 1.7f, 0f)
+    }
+
+    private fun updateStory(dt: Float) {
+        noteWaypoint()
+        script.update(this, dt)
+    }
 
     // ---- cutscenes -------------------------------------------------------
 

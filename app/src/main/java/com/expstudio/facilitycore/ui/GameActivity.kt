@@ -48,6 +48,9 @@ class GameActivity : AppCompatActivity() {
         val seed = loaded.id.hashCode().toLong() * 31L + loaded.createdAt
 
         val gameView = GameView(this, store, loaded.chapter, loaded.stage, seed, audio)
+        gameView.session.restoreWaypoint(
+            loaded.waypointRoom.takeIf { it.isNotEmpty() }, loaded.waypointStage
+        )
         gameView.session.onStageChanged = { stage -> persist(stage) }
         gameView.session.onHaptic = { ms -> vibrate(ms) }
         gameView.onQuit = { finishSession() }
@@ -95,6 +98,12 @@ class GameActivity : AppCompatActivity() {
         w.stage = maxOf(w.stage, stage)
         w.checkpoint = v?.session?.script?.checkpointFor(w.stage) ?: Stage.checkpointFor(w.stage)
         w.lastPlayedAt = System.currentTimeMillis()
+        // The corridor to come back to after a death, so quitting and resuming
+        // does not undo the ground already walked.
+        v?.session?.let {
+            w.waypointRoom = it.waypointRoom ?: ""
+            w.waypointStage = it.waypointStage
+        }
         if (v != null) {
             // Only bank the time that has not been written yet.
             val delta = v.sessionSeconds - savedSeconds
