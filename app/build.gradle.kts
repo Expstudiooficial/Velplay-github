@@ -11,8 +11,8 @@ android {
         applicationId = "com.expstudio.facilitycore"
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "3.1.0"
+        versionCode = 5
+        versionName = "4.0.0"
     }
 
     /**
