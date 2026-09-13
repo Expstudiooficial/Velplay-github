@@ -51,7 +51,12 @@ class Monster {
     /** Scales the whole silhouette; the ending and jumpscare push this up. */
     var scale = 1f
 
+    /** The legs it was last given, so the pursuit can take them over. */
+    var route: List<ChaseLeg> = emptyList()
+        private set
+
     fun setRoute(route: List<ChaseLeg>) {
+        this.route = route
         legs = route
         totalLength = route.sumOf { it.length.toDouble() }.toFloat().coerceAtLeast(0.001f)
     }

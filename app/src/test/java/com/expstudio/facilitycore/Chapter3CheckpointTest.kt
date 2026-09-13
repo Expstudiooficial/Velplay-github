@@ -25,7 +25,7 @@ class Chapter3CheckpointTest {
      * download, a fight, a two-stage haul. The playthrough covers these; here
      * they would only prove the bot is not a player.
      */
-    private val setPieceSpawns = setOf("superdb3", "core3", "pit3")
+    private val setPieceSpawns = setOf("superdb3", "core3", "pit3", "archive3")
 
     @Test
     fun everyCheckpointLeavesTheChapterPlayable() {

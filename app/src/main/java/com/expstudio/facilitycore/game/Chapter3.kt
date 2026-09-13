@@ -99,8 +99,8 @@ object Stage3 {
  */
 object Chapter3 {
 
-    const val CHASE_SECONDS = 30f
-    const val DEEP_CHASE_SECONDS = 34f
+    const val CHASE_SECONDS = 48f
+    const val DEEP_CHASE_SECONDS = 54f
     const val VENT_SECONDS = 26f
     /**
      * How long the boss stays in the room before the floor gives out.
@@ -216,6 +216,15 @@ object Chapter3 {
         out.locked = true
         out.manual = false
         props.add(out)
+
+        // The way back. It stands open until the thing in here notices you, and
+        // then it does not. Leaving mid-fight and returning used to strand the
+        // hunter in the geometry; sealing the room is both the honest fix and
+        // the better beat.
+        val back = Door(Box.of(-0.2f, -3.6f, 0.8f, 3.6f), "door_arch_back")
+        back.manual = false
+        back.forceOpen()
+        props.add(back)
     }
 
     /** The room where it gets between you and the door, and the duct is high. */
@@ -541,6 +550,10 @@ object Chapter3 {
         lock(r(runA[1]), r(runA[2]), "door_a1", DataTerminal.Kind.BREAKERS, 11L)
 
         Compose.join(r(runA.last()), r("archive3"))
+        r("archive3").exits.removeAll { it.toRoom == runA.last() }
+        r("archive3").exits.add(
+            Exit(Box(-1.0f, -11f, 0.4f, 0f), runA.last(), 3.0f, 0f, door("archive3", "door_arch_back"))
+        )
         r("archive3").exits.add(
             Exit(Box(29.4f, -11f, 30.6f, 0f), "juke3", 1.6f, 0f, door("archive3", "door_arch"))
         )
@@ -677,6 +690,10 @@ object Chapter3 {
             }
         }
         if (stage >= Stage3.JUKE) door("archive3", "door_arch")?.forceOpen()
+        // Shut for the fight, open again once it is over.
+        door("archive3", "door_arch_back")?.let {
+            if (stage in Stage3.ARCHIVE_PUZZLE..Stage3.HAND) it.forceClose() else it.forceOpen()
+        }
         if (stage >= Stage3.RUN_B) {
             door("seal3", "door_seal")?.forceOpen()
             (rooms["seal3"]?.props?.firstOrNull { it is ReachAnchor && it.id == "shutter_vent" } as? ReachAnchor)

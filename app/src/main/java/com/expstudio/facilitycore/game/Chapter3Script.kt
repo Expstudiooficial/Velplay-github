@@ -241,13 +241,22 @@ class Chapter3Script : ChapterScript() {
 
     private fun beginArchiveFight(g: GameSession, silent: Boolean) {
         g.setStage(Stage3.ARCHIVE_PUZZLE)
-        g.maxHealth = 3
-        g.health = 3
+        // Five. The archive asks the player to learn three growing sequences
+        // across a ziggurat while something faster than them shares the floor;
+        // three lives made the learning cost a checkpoint every time.
+        g.maxHealth = 5
+        g.health = 5
         g.monster.kind = Monster.Kind.PLAYERR
         g.monster.mode = Monster.Mode.ATTACKING
         g.monster.place("archive3", 27.0f, 0f, -1)
         attackTimer = FIRST_SWING
         swinging = false
+        (g.level.rooms["archive3"]?.props
+            ?.firstOrNull { it is Door && it.name == "door_arch_back" } as? Door)?.let {
+            it.forceClose()
+            g.playSound(Sfx.Id.SHUTTER, 0.9f)
+            g.camera.shake(0.3f, 0.5f)
+        }
         if (!silent) {
             g.say("It was waiting in here. It was waiting the whole time.")
             g.say("Five index nodes. It calls them, I touch them, in order.")
@@ -311,6 +320,8 @@ class Chapter3Script : ChapterScript() {
 
     override fun onArchiveCoreTaken(g: GameSession) {
         if (g.stage >= Stage3.JUKE) return
+        (g.level.rooms["archive3"]?.props
+            ?.firstOrNull { it is Door && it.name == "door_arch_back" } as? Door)?.forceOpen()
         g.reach.unlocked = true
         g.setStage(Stage3.JUKE)
         g.playSound(Sfx.Id.UNLOCK, 1f)
@@ -329,6 +340,12 @@ class Chapter3Script : ChapterScript() {
         if (g.cut != Cut.NONE) return
         val m = g.monster
         if (m.mode != Monster.Mode.ATTACKING) return
+        // Only while they are in the same room. This used to run regardless,
+        // clamping the hunter to whichever room the player had walked into and
+        // reading the floor from that room's geometry — so stepping out of the
+        // archive and back left it standing under the stacks, in the floor,
+        // where it could no longer reach anybody.
+        if (m.roomId != g.room.id) return
         val bounds = g.room.bounds
 
         if (!swinging) {

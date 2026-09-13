@@ -76,8 +76,8 @@ object Stage2 {
  */
 object Chapter2 {
 
-    const val CHASE_SECONDS = 30f
-    const val SHADE_CHASE_SECONDS = 26f
+    const val CHASE_SECONDS = 48f
+    const val SHADE_CHASE_SECONDS = 44f
     /** Where the Playerr takes the door off its hinges. */
     const val HALL_TRIGGER_X = 17f
     /** Where the shade catches up with you again. */

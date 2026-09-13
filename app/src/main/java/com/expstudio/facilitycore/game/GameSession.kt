@@ -45,6 +45,9 @@ class GameSession(
     val player = Player()
     val monster = Monster()
 
+    /** How the pursuit moves. Owns its own legs rather than borrowing yours. */
+    val pursuit = Pursuit()
+
     /**
      * The second hunter. Chapter 3's last fight has both of them in the room at
      * once, and a fight the player is told is two-on-one has to actually be.
@@ -152,6 +155,17 @@ class GameSession(
     private var heartTimer = 0f
     private var breathTimer = 0f
     private var ambientTimer = 6f
+    /**
+     * True while the player is pushing into something and getting nowhere.
+     *
+     * Distinct from simply standing still: only someone actually holding a
+     * direction counts. The pursuit eases for a struggling player, and doing
+     * nothing at all must never earn that.
+     */
+    var playerStruggling = false
+        private set
+    private var struggleHold = 0f
+
     /** Set by the script when the return vent's floor gives way. */
     var ventFloorBroken = false
 
@@ -366,6 +380,15 @@ class GameSession(
         particles.update(dt)
         player.hasPack = hasKeyPack
 
+        // Sticky for a moment: someone jumping at a wall they cannot pass only
+        // loses their speed on each contact, and a frame-exact test would read
+        // that as making progress.
+        if (kotlin.math.abs(moveX) > 0.2f && kotlin.math.abs(player.vx) < 1.5f && player.controlEnabled) {
+            struggleHold = STRUGGLE_HOLD
+        } else if (struggleHold > 0f) {
+            struggleHold -= dt
+        }
+        playerStruggling = struggleHold > 0f
         if (exitCooldown > 0f) exitCooldown -= dt
         updateTension(dt)
         updateCrouchHint(dt, moveX, crouch)
@@ -648,7 +671,8 @@ class GameSession(
         chaseStageValue = chaseStage
         chaseTime = 0f
         monster.mode = Monster.Mode.CHASING
-        monster.resetChase()
+        pursuit.setRoute(monster.route)
+        pursuit.reset(monster)
         player.speedScale = CHASE_SPEED_BOOST
     }
 
@@ -666,20 +690,14 @@ class GameSession(
     private fun updateChase(dt: Float) {
         if (stage != chaseStageValue || cut != Cut.NONE) return
         chaseTime += dt
-        // The clock is the deadline, but the pursuit is anchored to the player:
-        // a purely time-driven monster on a long budget crawls along at under
-        // 2 m/s and is never seen, which is not a chase.
-        val timeProgress = chaseTime / script.chaseSeconds
-        val playerProgress = monster.progressAt(room.id, player.x)
-        val lead = MathX.lerp(CHASE_LEAD_START, CHASE_LEAD_END, timeProgress) / monster.routeLength
-        val anchored = if (playerProgress != null) playerProgress - lead else 0f
-        monster.setChaseProgress(kotlin.math.max(timeProgress, anchored))
+        // The clock is still the outer deadline — the level is coming down —
+        // but what actually catches the player is the thing behind them, which
+        // now has its own legs.
+        val caughtByHand = pursuit.update(this, monster, dt)
         camera.shake(0.03f + 0.05f * (chaseTime / script.chaseSeconds), 0.1f)
         if (monster.wantsScream()) audio.playPitched(Sfx.Id.SCREAM, 0.5f, monster.screamPitch())
 
-        val caught = chaseTime >= script.chaseSeconds ||
-            (monster.roomId == room.id && monster.touching(player))
-        if (caught) die()
+        if (caughtByHand || chaseTime >= script.chaseSeconds) die()
     }
 
     /** Ends a pursuit and drops the named shutter behind the player. */
@@ -1136,6 +1154,8 @@ class GameSession(
         const val NO_CHASE = -1
         /** How long to be stopped by a low gap before the game says so. */
         const val HINT_DELAY = 0.35f
+        /** How long a struggle reads as a struggle after the last contact. */
+        const val STRUGGLE_HOLD = 0.6f
         /** Mercy window after a hit lands. */
         const val HIT_MERCY = 1.1f
         /** Metres the pursuer hangs back at the start of the chase... */

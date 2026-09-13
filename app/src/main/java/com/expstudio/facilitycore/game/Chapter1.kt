@@ -19,7 +19,15 @@ import com.expstudio.facilitycore.core.Palette
  */
 object Chapter1 {
 
-    const val CHASE_SECONDS = 30f
+    /**
+     * The outer deadline, not the thing that kills you.
+     *
+     * The pursuit has real legs now — it closes when it loses ground and eases
+     * when you are stuck on something you have not learned. That is where the
+     * pressure comes from, so the clock can be the long backstop it should
+     * always have been rather than the primary executioner.
+     */
+    const val CHASE_SECONDS = 48f
     /** Where the monster notices the player in the archive. */
     const val ENCOUNTER_X = 20f
     /** Distance into the return vent at which the ceiling comes apart. */
